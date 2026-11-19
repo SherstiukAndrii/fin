@@ -39,7 +39,7 @@ In the formulas below, `d0` is the entered start date from `A9`, `d` is the curr
 
 The first line chart uses `A9:A1008` for categories and `B9:D1008` for the `Free`, `Fire`, and `Apr` series. The second uses `A9:A1007` and `D9:D1007` for `Apr` alone. The XLSX chart definitions omit an explicit blank-display setting. The `Inf` series appears in the table. Conditional rules over `A9:D1007` test for the first day of a month and for Mondays.
 
-The workbook uses two different maximum purchase row bounds. Review the `Freezed` bound, the trailing undated `Free` calculation, the late `Fire` switch, and the export fallback in [open questions](open-questions.md) before treating any change as part of parity.
+The workbook uses two different maximum purchase row bounds. The exact behavior of the trailing undated `Free` calculation, the late `Fire` switch, and the export fallback remains under review. See [open questions](open-questions.md).
 
 ## Bank instrument catalog
 
@@ -51,7 +51,7 @@ The workbook defines `Table1` at `Bank!A1:F7`. The same instrument name can appe
 | `Bank!B2:B7` | `Date`. Numeric spreadsheet date displayed as day and abbreviated month. The lookup result supplies the end date in lot yield. | Instrument maturity date. Confirm whether the deposit date also represents contractual maturity. |
 | `Bank!C2:C7` | `Price`. UAH amount returned by the lot payout lookup. | Contractual payout per unit used in the workbook. Confirm treatment of any interest or coupon cash flows included in this amount. |
 | `Bank!D2:D7` | `Count`. The shared formula starts at `D2` with `=SUMIF($A$9:$A2008,A2,$D$9:$D2008)`. Its starting rows are fixed and its ending rows move from `2008` to `2013` as it fills down. | Sum of recorded purchase quantities by instrument name. Confirm when mature lots should leave this count. |
-| `Bank!E2:E7` | `Target`. Percentage-formatted numeric input. In the observed lot `VLOOKUP` calls, the ranges include this column and the return indices select `Date` or `Price`. | Candidate target-yield field. Confirm its meaning and whether it belongs in the first MVP. |
+| `Bank!E2:E7` | `Target`. Percentage-formatted numeric input. In the observed lot `VLOOKUP` calls, the ranges include this column and the return indices select `Date` or `Price`. | Optional `target_annual_yield`, used for comparison only. |
 | `Bank!F2:F7` | `Income`. Shared formula starts at `F2` with `=D2*C2`. | Aggregate face or redemption proceeds using the recorded count. The source label is `Income`. |
 
 ## Bank purchase lots
@@ -77,8 +77,25 @@ The filled purchase rows are `Bank!A9:H14`. Columns `A:D` supply the instrument 
 | `Bank!G8` | `="👮"&TEXT(SUM(G10:G2008),"# ##0")` | Fee total formatted as text. The sum starts at row `10` and excludes `G9`, even though the lot cost in `H9` includes it. |
 | `Bank!H8` | `="-"&TEXT(SUM(H9:H2008),"# ##0")` | Acquisition cost total formatted as text with a leading minus. `D8` consumes the formatted string. |
 
-The proposed app can represent payout, fees, cost, and yield as numeric fields and apply formatting in the interface. Compare that representation against the workbook where a formula consumes formatted text, since preserving more precision can change the output. See the [proposed domain model](domain-model.md).
+When reconciling summaries, account for the formulas that consume formatted text. Preserving more precision can change the output. See the [domain model](domain-model.md).
+
+## Approved Fin mapping
+
+These decisions define the MVP. The observed formulas above remain the reference for comparing shared behavior and identifying changes to outputs.
+
+| Area | Approved app behavior and effect on workbook comparisons |
+| --- | --- |
+| Opening balances and holdings | Map `Overview!B1:D2` to manual balances by category and currency in a dated opening snapshot with existing holdings. Cash already reflects purchases on or before the snapshot date. Purchases after that date affect projected cash. This uses the snapshot as the purchase boundary, while the workbook seeds `Free` from `B4` and applies date matches after the first projection row. |
+| Projection configuration | `Overview!A9`, `B6`, and `B7` map to an explicit start date, monthly contribution, and inflation input. The app keeps the start date independent of today and supports a configurable horizon up to 50 years. The workbook has 999 dated rows. The app models the return on free cash using a separate editable assumption. `Bank!E8` remains the Bank portfolio-yield metric. The `Fire` recurrence requires approval. |
+| FX | Map `Overview!C3:D3` to manual rates that can be edited offline. Each rate has an observation date and triggers a warning when older than seven days. UAH is the default reporting currency. The quote dates and age warning add behavior beyond the workbook rate cells. |
+| Government bonds | The app requires ISIN, currency, denomination, purchase and maturity dates, price, integer quantity, and fees. Enter explicit coupon cash flows where applicable. The workbook derives payouts from catalog `Price` and uses a single maturity credit per instrument in `Free`. Explicit coupon events add cash flows beyond that recurrence. |
+| Deposits | The app requires bank, currency, principal, opening and maturity dates, interest rate, and a payment schedule. The worksheet uses a catalog date and unit payout with its deposit lot. An explicit schedule can generate interest credits before maturity. |
+| Actual cash flows | Derive actual cash flows from contractual terms and purchase inputs. Changes to the comparison target leave those cash flows unchanged. |
+| Currency precision and input states | Keep decimal intermediate values. Specify cash-flow rounding and apply two decimal places for UAH, USD, and EUR. Preserve missing, zero, and calculation error as distinct states. The proposed half-up rule and where to apply cash-flow rounding remain under review. The workbook sometimes rounds to whole units through `TEXT` and consumes those strings in later formulas. Its `IFERROR` fallbacks can turn input or calculation errors into numeric outputs. |
+| Storage and entry | The app uses manual entry and local SQLite, with explicit backup and restore. It operates offline. Bulk import is deferred. The attached exports are reference material for specification and parity checks. |
+
+The proposed opening convention treats the snapshot as the close of its calendar day and rolls subsequent cash events forward to the projection start. Use the starting row and any gap after the snapshot as separate checks during verification. [Open questions](open-questions.md)
 
 ## Formula reconciliation
 
-Use the XLSX formulas and chart ranges as the reference. To verify future behavior, compare approved synthetic examples against spreadsheet outputs before claiming parity. Cover deposit and bond lots, several lots for one instrument, fee aggregation, zero payout or duration, maturity-day movement, the first and last daily rows, and chart handling of empty values. Track changes to workbook formulas and unresolved semantics in [open questions](open-questions.md).
+Compare synthetic examples against the XLSX formulas and chart ranges for shared behavior. Assert exact results where possible and record any tolerance used for a Sheets comparison. Cover deposit and bond lots, several lots for one instrument, fee aggregation, zero payout or duration, maturity-day movement, the first and last daily rows, and chart handling of empty values. Use separate expected results for approved changes such as snapshot-boundary purchases and explicit coupon or interest events. Track unresolved semantics in [open questions](open-questions.md).
