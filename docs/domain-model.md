@@ -1,49 +1,64 @@
 # Fin MVP domain model
 
-## Workbook evidence
+Bank describes deposits, government bonds and their expected payments. Overview combines a dated opening state with investment cash movements and forecast assumptions. This model defines the financial behavior behind both pages.
 
-`Bank` separates instrument terms in rows 2–7 from purchases in rows 9–14. It links purchases by exact name and calculates cost, proceeds and annualized yield. The catalog's entered `Target` rate has no observed consumer in the in-scope formulas.
-
-`Overview` combines cash and bank balances, manual exchange rates and Bank outputs. It uses `TODAY()` to identify active holdings and a separate entered date to start the projection. The opening `Free` value uses a foreign-balance toggle. Dated rows after the opening apply purchases, maturity proceeds and first-of-month contributions. The `Fire` rule changes near the end of the projection. [Babki mapping](babki-mapping.md)
-
-## Approved local model
+## Records
 
 | Record | Fields and relationships |
 | --- | --- |
-| Opening snapshot | An `id`, an `asOfDate`, manually entered cash and bank amounts by currency, and references to existing bond lots and deposits. Referencing an existing position preserves its original purchase or opening date and its future cashflows. |
-| Ukrainian government bond | An `id`, ISIN, currency, denomination, maturity date and optional `target_annual_yield`. Multiple lots can reference the same bond. |
-| Bond lot | An `id`, bond reference, purchase date, purchase price, integer quantity, fees and references to scheduled coupon payments where applicable. Currency, denomination and maturity date come from the bond terms. |
-| Deposit | An `id`, bank, currency, principal, opening date, maturity date, interest rate, references to the payment schedule and optional `target_annual_yield`. The contract and its principal belong to one deposit. |
-| Scheduled payment | An `id`, position reference, payment date, native-currency amount and purpose such as coupon, interest or principal repayment. Dated payments support the explicit bond coupon and deposit payment schedules. |
-| FX observation | Base and quote currencies, a rate expressed as quote units per base unit, and an observation date. Rates are entered and edited offline. A rate older than seven days triggers a warning. |
-| Projection inputs | Snapshot reference, explicit start date, horizon of up to 50 years, reporting currency defaulting to UAH, monthly contribution, inflation rate and assumed return on free cash. The user can edit the forecast inputs offline. |
+| Account | A stable identifier, name, cash or bank category, and currency. A snapshot stores the closing balance for each included account. |
+| Opening snapshot | A calendar date, manually entered account balances in their native currencies, and the bond lots and deposits held at the close of that date. |
+| Government bond | An instrument identifier, ISIN, currency, denomination, maturity date and an optional target annual yield (`target_annual_yield`). Multiple purchase lots can reference one instrument. |
+| Bond lot | A stable identifier, bond reference, purchase date, unit purchase price, integer quantity, fees, and a coupon schedule where applicable. Currency, denomination and maturity date come from the instrument. The lot identifies which payments are due to that position. |
+| Deposit | A stable identifier, bank, currency, principal, opening and maturity dates, interest rate, an explicit payment schedule, and an optional target annual yield. |
+| Scheduled payment | A stable identifier, bond lot or deposit reference, payment date, native-currency amount and purpose. Purposes include coupon, interest, and principal repayment or redemption. |
+| FX observation | Base currency, quote currency, quote units per base unit, and observation date. The forecast uses an explicitly selected set of manually entered rates. |
+| Projection inputs | Opening snapshot reference, explicit start date, horizon capped at 50 years, reporting currency defaulting to UAH, selected FX observations, monthly contribution, annual inflation rate and assumed annual cash return. |
 
-Local SQLite stores manually entered records, including market inputs. Explicit backup and restore preserve the inputs, links and missing-value states. Bulk import is deferred.
+SQLite holds the records locally. Manual entry, backup, and restore preserve monetary precision and relationships. Target annual yield is comparison metadata. Contractual payments come from the deposit and bond terms.
 
-## Cash and calculation invariants
+## Dated cash movements
 
-- Existing holdings were acquired or opened on or before the snapshot date, and their acquisition costs are already reflected in the opening balances. The projection applies later purchase and opening debits to available cash.
-- Later scheduled receipts for existing positions still enter the cash projection on their dates. A scheduled principal repayment enters once. Same-date events remain individually identifiable even when the projection shows their net daily effect.
-- Scheduled payments are tied to contractual terms, with an explicit coupon or payment schedule as applicable. Keep contractual payment amounts separate from contributions and growth modeled using the assumed return on free cash. The optional `target_annual_yield` field supports comparison only.
-- Retain currency on monetary inputs and cashflows. Use Decimal for monetary calculations and keep intermediate precision. Preserve missing values, explicit zero amounts and calculation errors as distinct states. Bond quantities are integers.
-- Display UAH, USD and EUR amounts to two decimal places. Use exact assertions where deterministic Decimal arithmetic permits them and document tolerance where Google Sheets comparison requires it.
+The opening snapshot is a closing state. Purchases and deposit openings on or before its date are already reflected in opening cash. Their acquisition costs are carried as the basis of existing holdings. Payments scheduled after the snapshot still affect the forecast on their respective dates.
 
-## Derived views
+The cash projection uses these dated movements.
 
-| Result | Inputs and outputs |
+| Event | Date | Effect in native currency |
+| --- | --- | --- |
+| Bond purchase | Purchase date | Debit unit purchase price × integer quantity + entered fees. |
+| Deposit opening | Opening date | Debit principal. |
+| Bond coupon or deposit interest | Scheduled payment date | Credit the scheduled amount for the position. |
+| Principal repayment or redemption | Scheduled payment date | Credit the scheduled principal or redemption amount. A final repayment or redemption releases the position’s remaining invested cost. |
+| Monthly contribution | First calendar day of each month after the snapshot | Add the scenario contribution in its entered currency. |
+
+Keep each movement individually identifiable even when several movements settle on one day. Scheduled amounts are entered as positive native-currency amounts for the whole position. The movement type determines whether cash increases or decreases. Use the explicit principal schedule when provided. For a holding with one repayment at maturity, use bond denomination times lot quantity or deposit principal as the scheduled receipt. Recognize that repayment once. The forecast assumes payments follow the entered terms.
+
+The start date must fall on or after the snapshot date. Accumulate all post-snapshot events through each displayed closing date, including any activity on a first displayed date later than the snapshot. Measure the 50-year horizon limit in calendar years from the projection start. Keep the same dated points in the daily table and charts.
+
+## Reporting and valuation
+
+Use the selected FX quotes throughout a projection. For a quote expressed as reporting units per unit of native currency, multiply the native amount by the quote. For native and reporting currencies that match, use a conversion factor of one. Warn when a selected quote is more than seven calendar days old on the day the user views the forecast. An observation dated after the viewing date is ineligible under the proposed rule. Keep native amounts visible when a missing or invalid quote makes a reporting-currency aggregate unavailable.
+
+Let `s` be the snapshot date, `d` the closing date of a projection point, and `p` the immediately preceding calendar date. All amounts below are in the reporting currency. Use the following baseline calculation conventions, including on days before a later display start.
+
+| Measure | Calculation |
 | --- | --- |
-| Bank holding summary | Acquisition cost, scheduled coupon or interest payments, and principal or redemption proceeds grouped by holding. Show the optional target alongside any calculated yield for comparison. |
-| Bank portfolio summary | Aggregate quantities, costs, fees, and scheduled proceeds. Keep Bank's portfolio-yield comparison distinct from modeled free-cash returns. Yield methods for multiple payments remain under review. |
-| Overview summary | Opening balances, total assets, active holding cost, and the workbook-derived summary measures under review, including `Returned` and the daily inflation and yield estimates. |
-| Projection point | A calendar date, available cash, modeled return, and inflation measures under the agreed formulas. Show the same daily values in the table and corresponding charts. |
+| Projected available cash | On `s`, sum the converted account balances. On each later date, add the converted, signed movements on `d` to available cash on `p`. |
+| Cumulative modeled cash return | Start at zero on `s`. For each subsequent day, add the daily return on the positive portion of prior-day scenario cash. With effective annual return assumption `r`, the daily rate is `(1 + r)^(1/365) − 1`. |
+| Scenario cash | Available cash plus cumulative modeled cash return on the same date. The modeled return remains a scenario result. |
+| Remaining invested cost | Sum the acquisition cost still attributed to holdings at the close of `d`. Use the finalized acquisition debit as the cost basis, including bond fees. Allocate a holding’s acquisition cost across its scheduled principal or redemption receipts in proportion to their amounts. A principal receipt releases its allocated cost. Coupons and interest leave the cost unchanged. Release any residual cost at the final principal receipt. For an opening position, use the cost remaining after principal receipts through the snapshot date. |
+| Projected assets | Scenario cash plus remaining invested cost. Use acquisition cost as the valuation basis for holdings. |
+| Inflation-adjusted projected assets | Divide projected assets on `d` by `(1 + i)^(elapsedDays/365)`, where `i` is effective annual inflation and `elapsedDays` counts calendar days from `s` through `d`, excluding `s`. Express the result in snapshot-date purchasing power. |
 
-## Proposed calculation conventions
+The return and inflation assumptions enter as decimal rates greater than −1 under this proposed effective-rate model. Projected available cash may be negative and exposes a funding shortfall. Modeled return uses the prior closing balance, so movements on a date affect the return base from the following day.
 
-These conventions specify how to apply the approved inputs. [Open questions](open-questions.md) tracks comparisons and mechanics that still need review.
+Bank shows holding acquisition costs, dated payments, and expected gain after entered fees. Expected gain equals the sum of scheduled coupon, interest, and principal receipts over the holding’s life minus its acquisition cost, in the holding currency. Calculate it when the schedule and cost are complete. A method for annualizing investment yields across irregular payment schedules remains open.
 
-- Treat the snapshot as the closing state on its date and require the projection start to fall on or after it. Carry forward post-snapshot activity before the start, and include start-date activity in the first point if the start is later than the snapshot. Apply each post-snapshot event once. Limit the end date to 50 calendar years from the projection start.
-- Store a bond purchase price as currency per unit and compute a lot debit from price times quantity plus entered fees. Use explicit scheduled payment amounts for the whole position in native currency. Price-quote conversion, coupon entitlement and redemption exceptions remain open.
-- Use a selected set of FX observations across the projection. Compare each observation date to the current local calendar date when the forecast is viewed, and warn when it is more than seven days old. The snapshot date and future projection dates do not affect the warning. An observation dated after the viewing date is ineligible. The missing-rate behavior remains open.
-- Persist monetary inputs losslessly in SQLite, for example as canonical decimal text. Reconstruct Decimal values before calculating and keep formatted text in the presentation layer.
-- Round each finalized acquisition debit or scheduled payment in UAH, USD or EUR to two decimals with `ROUND_HALF_UP` before posting it to the cash projection. Keep FX, inflation and modeled return calculations at intermediate precision and apply `ROUND_HALF_UP` to presentation separately. Google Sheets parity at rounding boundaries requires verification.
-- Derive purchase debits, payment credits and modeled growth from the local inputs. A daily projection point ties available cash, modeled return and inflation measures to a calendar date. The display formulas, once approved, determine how these values map to `Free`, `Fire`, `Apr` and `Inf`, and charts use the resulting points.
+## Precision and data integrity
+
+- Use Decimal for money and retain intermediate precision. For UAH, USD and EUR, the proposed rule posts each finalized native-currency movement at two decimals using `ROUND_HALF_UP`. Apply the same mode separately when displaying UAH, USD or EUR values to two decimals.
+- Preserve distinct states for a missing amount, an entered zero, and a calculation error. An unavailable input makes dependent results unavailable. Preserve the original amounts and dates for review.
+- Require each payment to reference a valid holding and each lot to reference a valid instrument. Preserve multiple purchases of the same instrument as separate lots. Apply each post-snapshot movement once.
+- Use exact assertions where deterministic Decimal arithmetic permits. State the error tolerance in forecast tests involving fractional powers. Compare before presentation rounding.
+
+See [open questions](open-questions.md) for extensions to the scheduled-payment model.

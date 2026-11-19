@@ -1,43 +1,34 @@
-# Fin MVP
+# Fin MVP specification
 
-This specification incorporates the approved MVP decisions. The remaining workbook and calculation decisions are tracked in [open questions](open-questions.md).
+Fin is a local, offline-first web application for recording cash and investments and exploring how they may change over time. The MVP has two pages, **Bank** for data entry and holding details and **Overview** for balances and projections.
 
-## Goal
+The [domain model](domain-model.md) defines records, calculation rules, and invariants. [Open questions](open-questions.md) tracks financial policy decisions beyond the baseline.
 
-A single user can run Fin as a local, offline-first web application, record cash and bank balances and holdings in deposits and Ukrainian government bonds, and see how those positions affect available cash and purchasing power over time. The MVP covers the `Bank` and `Overview` workflows.
+## Bank
 
-## Workbook reference
+- Enter a dated opening snapshot with manual balances for cash and bank accounts by currency. Include investments already held on that date. Opening balances include the effect of purchases and deposit placements through the snapshot date.
+- Add and edit Ukrainian government bonds and deposits. Capture ISIN, currency, denomination, purchase and maturity dates, unit purchase price, integer quantity, fees, and a coupon schedule when applicable for each bond lot. Capture bank, currency, principal, opening and maturity dates, interest rate, and payment schedule for each deposit.
+- Show holdings with their acquisition cost, upcoming payments, maturity proceeds, and expected gain after entered fees when the acquisition and payment data is complete. Identify coupon, interest, and principal payments distinctly. A principal repayment is a cash receipt and a reduction in the position's remaining invested cost.
+- Show an optional target annual yield for comparison alongside the instrument terms. Editing the target leaves all cash flows and forecast results unchanged.
 
-`Bank` calculates purchase costs, maturity proceeds, and a portfolio yield. `Overview` combines balances, FX rates, and active investment costs in a summary and projects available cash, modeled returns, and purchasing power in a daily table and two charts. The mapping records the original formulas, including the late `Fire` formula switch and the undated trailing `Free` result. [Babki mapping](babki-mapping.md)
+## Overview
 
-## Approved workflows
+- Show cash and bank balances by currency, their converted total, and the remaining invested cost of holdings. Label the combined asset estimate as cost-based. Label contractual payments as scheduled.
+- Let the user edit all forecast inputs offline. The inputs are FX observations, monthly contribution, annual inflation, explicit projection start date, a horizon up to 50 years, and an assumed annual return on available cash. Default the reporting currency to UAH. Show an FX warning when an observation is more than seven days old.
+- Show dated projections for available cash, modeled return on cash, nominal projected assets, and inflation-adjusted projected assets. Available cash includes scheduled movements and contributions. Show modeled return separately so it can be distinguished from payments from a holding. Inflation-adjusted amounts express projected assets in opening-date purchasing power.
+- Plot changes in available cash and asset values over time using the same dated data as the projection table. A missing or invalid calculation appears as unavailable and remains distinct from a result of zero.
 
-| Workflow | User action | MVP result |
-| --- | --- | --- |
-| Enter the opening state | Enter a dated snapshot of cash and bank balances by currency and include existing investment holdings. | Opening cash already reflects purchases on or before the snapshot date. Such purchases are never deducted again. Purchases after that date reduce projected available cash on their purchase date. Future payments from opening holdings remain eligible for the projection. |
-| Maintain government bonds | For each Ukrainian government bond holding, enter ISIN, currency, denomination, purchase and maturity dates, unit purchase price, integer quantity, fees, and an explicit coupon schedule where applicable. | Bank tracks each lot's acquisition cost and its scheduled coupon and maturity payments. Multiple lots can share an ISIN. |
-| Maintain deposits | Enter the bank, currency, principal, opening and maturity dates, interest rate, and payment schedule. | Bank tracks the opening outflow and the scheduled interest and principal receipts. |
-| Compare yields | Optionally enter `target_annual_yield` from `Bank!E2:E7`. | Show the target for comparison. Changes to the target leave contractual and projected cashflows unaffected. |
-| Set forecast assumptions | Edit FX rates and observation dates, the monthly contribution, the inflation rate, the explicit projection start date, the horizon up to 50 years, and the assumed return on free cash. All inputs are editable offline. | Overview defaults to UAH for reporting. Rates are entered manually, with a warning when an observation is more than seven days old. The free-cash return is a forecast input separate from the investment yield used for comparisons and from contractual payments. |
-| Review the projection | Review a dated financial summary, daily table, and charts. | Overview shows balances, holdings, `Total`, `Free`, `Fire`, and the inflation measures according to the agreed rules. The combined `Free`, `Fire`, and `Apr` chart and the separate `Apr` chart draw from the daily series. The choice of `Fire` recurrence and other workbook exceptions remains under review. |
-| Resume or recover offline | Reopen the app, create a backup on demand, or select a backup to restore. | The app saves inputs locally in SQLite and supports explicit backup and restore with the network disconnected. |
+## Local operation and scope
 
-## Proposed calculation conventions
+Fin stores manually entered data in local SQLite. Users can reopen the app, edit data, calculate a projection, and explicitly back up or restore the dataset offline. Financial data stays on the device during normal operation.
 
-- A snapshot represents the closing state on its date. Start the displayed projection on or after that date. Carry eligible activity after the snapshot through the first displayed date even when the start is later than the snapshot. Continue the workbook’s first-of-month contribution schedule. Count each purchase, payment, or contribution once.
-- Use a horizon measured in calendar years from the selected projection start date, with a 50-year maximum. Compare the daily outputs using explicit dates.
-- Show FX age relative to the current local date when the forecast is viewed. A rate exactly seven days old does not trigger the warning. Keep the quoted rates fixed across a projection until the user edits them.
-- Use Decimal for monetary calculations and retain intermediate precision. Apply the proposed half-up rule to each final contractual cashflow in its native currency and separately when presenting a value. Display UAH, USD, and EUR with two decimal places. The [domain model](domain-model.md) defines the rounding boundaries and distinguishes missing values, zero values, and calculation errors.
-
-## MVP boundaries
-
-- One local dataset with manual entry and editing. Starting the app, persisting data, running calculations, and backing up or restoring data work without required cloud services.
-- Bulk import, automatic market data or FX fetching, bank feeds, syncing, collaboration, and workflows from other workbook tabs remain outside the MVP. Keep spreadsheet exports as references for parity checks.
+Bulk import, automatic market data and FX fetching, bank feeds, cloud sync, collaboration, and market-price valuation are outside the MVP. The forecast uses contractual payment schedules and user-entered assumptions.
 
 ## Acceptance criteria
 
-1. With the network disconnected, save an opening snapshot, a government bond lot, and a deposit. Reopen Fin and verify the saved inputs. Create a backup, change the dataset, and verify that an explicit restore recovers the backed-up data.
-2. With purchases before, on, and after the snapshot date, verify that only later purchases debit projected cash. Include a projection start after the snapshot, a purchase in the intervening period, and events on the first displayed day. Verify the bond coupon and redemption and the deposit interest and repayment are each counted once.
-3. Verify that the forecast starts on the entered date and enforces the 50-year limit. Change each assumption and verify its dependent output. Changing the target yield leaves cashflows unchanged. Verify a stale FX warning appears after seven days without any data fetch.
-4. Verify integer bond quantities, settlement rounding, two-decimal presentation, and separate representations for missing values, zeros, and calculation errors. Use exact assertions where deterministic Decimal arithmetic permits them. Document any tolerance used for a Google Sheets comparison.
-5. Verify the approved Overview totals, daily series, and chart points with sanitized inputs and expected results. Record any intentional difference from Babki and the disposition of the final undated row.
+1. Enter balances, a bond lot with a coupon schedule, and a deposit with a payment schedule while offline. Reopen Fin and verify the saved inputs. Back up the dataset, change it, and restore the backup to verify the original inputs and record links.
+2. With a closing cash balance of 1,000 UAH, purchases on or before the snapshot date leave that opening amount unchanged. A later purchase costing 120 UAH including fees and a scheduled coupon of 20 UAH produce available cash of 900 UAH after both events, with zero contributions. Both events are reflected on the first visible date if they occurred after the snapshot and on or before the projection start.
+3. For a holding paid at maturity, recognize its scheduled receipt once and release its remaining invested cost. For scheduled partial principal payments, verify the proportional cost release and the final zero cost. Verify that same-day interest and principal are distinct amounts and that contributions change available cash without appearing as investment income.
+4. Use the explicitly selected projection start and enforce the 50-year horizon. At zero assumed return, projected assets equal available cash plus remaining invested cost. At zero inflation, real and nominal projected asset values match. Changing the return assumption affects modeled growth and projected assets without editing contractual payments.
+5. At the same viewing date, a seven-day-old FX observation produces no warning and an eight-day-old observation produces a warning. Missing required FX data leaves affected converted amounts unavailable. A complete forecast respects the selected FX inputs without fetching updates.
+6. Verify integer bond quantities, cash flow rounding, two-decimal presentation for UAH, USD, and EUR, and distinct missing, zero, and error states. Use exact assertions for deterministic Decimal results and an explicit tolerance for any rounded or approximate calculation. Verify the charts match the dated projection data.
