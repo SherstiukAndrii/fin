@@ -18,6 +18,23 @@ python -m fin --version
 
 The installed `fin` command is equivalent to `python -m fin`. It only reports scaffold status; it does **not** run a server.
 
+## Run and test from VS Code (WSL)
+
+1. In VS Code, open the repository **in WSL**, not as a Windows-local folder. Use **Remote: Connect to WSL** (or `code .` from the WSL terminal). Open the repository folder or `fin.code-workspace`.
+2. In the WSL terminal, once per clone, set up the project:
+
+   ```bash
+   python3 -m venv .venv
+   .venv/bin/python -m pip install -e ".[dev]"
+   ```
+
+3. From the VS Code menu choose **Terminal → Run Task…** (or **Ctrl+Shift+P → Tasks: Run Task**):
+   - **Fin: Run** — launch the current CLI scaffold (`python -m fin`). It does **not** start a web server yet.
+   - **Fin: Tests** — run `pytest -v`. It is also the default VS Code **Run Test Task**.
+4. Read the output in VS Code's integrated terminal. A nonzero exit code means the task failed; fix and rerun before PR review.
+
+Tasks in `.vscode/tasks.json` use the repository's `.venv/bin/python` explicitly and require the WSL Linux environment. If VS Code says that `.venv/bin/python` is missing, repeat step 2 in the WSL repository root. The commands do not need activation with `source`.
+
 ## Checks before a PR
 
 ```bash
