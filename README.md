@@ -16,7 +16,7 @@ python -m fin
 python -m fin --version
 ```
 
-The installed `fin` command is equivalent to `python -m fin`. It only reports scaffold status; it does **not** run a server.
+The installed `fin` command is equivalent to `python -m fin`. Without subcommands it reports scaffold status; `fin db` manages local SQLite. It does **not** run a server.
 
 ## Run and test from VS Code (WSL)
 
@@ -30,6 +30,8 @@ The installed `fin` command is equivalent to `python -m fin`. It only reports sc
 
 3. From **Terminal → Run Task…** (or **Ctrl+Shift+P → Tasks: Run Task**) choose a project task:
    - **Fin: Run** — launch the current CLI scaffold (`python -m fin`), not a web server.
+   - **Fin: DB Init** — create/migrate `data/fin.sqlite3` (safe to run again).
+   - **Fin: DB Status** — read-only schema and integrity status of the local database.
    - **Fin: Tests** — run `pytest -v`, also the default **Run Test Task**.
    - **Fin: Ruff Check** — run `ruff check .` (lint).
    - **Fin: Ruff Format Check** — run `ruff format --check .` (non-mutating format verification).
@@ -114,5 +116,21 @@ with SQLiteBankRepository(Path("data/fin.sqlite3")) as repository:
 ```
 
 Create the parent directory before opening a file-based database. Files under `data/` and `*.sqlite3` / `*.db` are excluded from Git. Use the existing **Fin: Check** VS Code task (`Ctrl+Shift+B`): there is no separate install command or third-party DB dependency.
+
+### Initialize and inspect the database
+
+In VS Code open `fin.code-workspace` in WSL → **Terminal → Run Task… → Fin: DB Init**. This creates `data/fin.sqlite3` and applies the existing schema migrations. The task is safe to rerun. Use **Fin: DB Status** to inspect the path, schema version and read-only integrity checks.
+
+Equivalent commands (run from the repository root):
+
+```bash
+.venv/bin/python -m fin db init
+.venv/bin/python -m fin db status
+# For a custom path:
+.venv/bin/python -m fin db init --path /path/to/fin.sqlite3
+.venv/bin/python -m fin db status --path /path/to/fin.sqlite3
+```
+
+`fin db status` does **not** create the file or run migrations: it reports a missing database, unsupported version, incomplete schema or integrity problems with a nonzero exit code. The default path is relative to the current working directory; workspace tasks always use the repository root.
 
 Schema migrations run in a single transaction; each repository write is atomic. This is **storage of contracts and receipts**, not a ledger that automatically credits account balances. The opening snapshot, ledger, backup/restore and UI arrive in later PRs. Do not delete the SQLite database with `git clean -fdx` or similar cleanup commands.

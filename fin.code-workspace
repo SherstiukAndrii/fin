@@ -34,6 +34,48 @@
         }
       },
       {
+        "label": "Fin: DB Init",
+        "type": "shell",
+        "command": "${workspaceFolder}/.venv/bin/python",
+        "args": [
+          "-m",
+          "fin",
+          "db",
+          "init"
+        ],
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated",
+          "clear": true
+        },
+        "detail": "Create/migrate local data/fin.sqlite3 (idempotent)"
+      },
+      {
+        "label": "Fin: DB Status",
+        "type": "shell",
+        "command": "${workspaceFolder}/.venv/bin/python",
+        "args": [
+          "-m",
+          "fin",
+          "db",
+          "status"
+        ],
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated",
+          "clear": true
+        },
+        "detail": "Read-only status and integrity check for data/fin.sqlite3"
+      },
+      {
         "label": "Fin: Tests",
         "type": "shell",
         "command": "${workspaceFolder}/.venv/bin/python",
