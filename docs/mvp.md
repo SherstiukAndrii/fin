@@ -12,6 +12,27 @@ The [domain model](domain-model.md) is normative for records, calculations and i
 - Record commissions and taxes per position or event; an entered zero is different from an unknown expense. Keep acquisition cost distinct from current market/estimated value. Store each price with its value, unit/currency, observation date and source.
 - Show holdings, purchase cost, latest valuation with its date, scheduled versus actual cash flows, maturity and expected gain when all inputs are known. An optional `target_annual_yield` is comparison-only and must not rewrite schedules.
 
+## Month-end control and manual reconciliation
+
+After the dated opening snapshot, a user may save one full account-control
+observation for each calendar month-end. All accounts (including known zeroes)
+are entered explicitly, in native currency. The application retains both the
+observed amount and the calculated cash balance as captured on that date.
+**Saving an observation never changes actual cash.**
+
+For each account, Fin shows the original calculation, current recomputed cash
+and the signed variance. An adjustment requires separate user confirmation
+and an explanation; it is an ordinary dated `correction` ledger event, linked
+uniquely to the observed account/month. This event changes balances only from
+its effective date, cannot be applied twice, and is not income, interest or an
+investment receipt. A stale difference cannot be posted silently if the ledger
+changed after the user reviewed the page. The original observation is
+preserved, even when later historical events affect the recomputed variance.
+
+SQLite v4 adds the observation and unique correction-link tables in a single
+transactional migration from earlier schema versions. Full backup and restore
+automation remains a later stage.
+
 ## Overview — Free, Fire and Total
 
 - **Free** is the estimated amount available for use, with a cumulative liquidity-level selector:

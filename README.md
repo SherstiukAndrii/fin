@@ -2,7 +2,7 @@
 
 Single-user, offline-first personal finance app for Windows and Linux. The planned MVP contains **Bank** and **Overview**; see [MVP requirements](docs/mvp.md) and the [domain model](docs/domain-model.md).
 
-**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank/Cash persistence v3**. Actual cash ledger and dated opening snapshot are available in Python. First local Bank browser UI is available; Overview/FX still to come. Future investment calculators and statement analysis are documented under `docs/`.
+**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank/Cash persistence v4**. Actual cash ledger and dated opening snapshot are available in Python. First local Bank browser UI is available; Overview/FX still to come. Future investment calculators and statement analysis are documented under `docs/`.
 
 ## Development with Windows + WSL (Ubuntu) + VS Code
 
@@ -95,13 +95,13 @@ The pure, offline `fin.domain.bank` module introduces:
 - `BondPaymentTerm` (`amount_per_bond`) and `DepositPaymentTerm` (`amount_for_deposit`): explicitly entered contractual schedules. Convert them with `bond_schedule` / `deposit_schedule` to immutable `ScheduledPayment` records. Bond amounts multiply by lot quantity **once**; deposit amounts never do.
 - `ActualReceipt` and `payment_balance`: reconcile multiple separately dated receipts to one scheduled obligation, with expected, partial, overdue and paid states.
 
-A coupon never reduces principal, a maturity date does not imply an extra coupon, and a planned payment is **not** booked cash. Cost basis is not market value. Receipt overpayments and duplicate IDs are rejected pending a later explicit reconciliation mechanism. No automatic reinvestment, interest generation or tax calculations.
+A coupon never reduces principal, a maturity date does not imply an extra coupon, and a planned payment is **not** booked cash. Cost basis is not market value. Receipt overpayments are preserved and shown separately from the plan; duplicate receipt IDs are rejected. No automatic reinvestment, interest generation or tax calculations.
 
 Run **Fin: Check** in `fin.code-workspace` before review. SQLite storage, account movements and valuations are separate future PRs.
 
 ## SQLite Bank persistence
 
-`fin.persistence.SQLiteBankRepository` saves bond instruments/lots, deposits, explicit scheduled payments and confirmed receipts in a local SQLite file. It creates **schema version 3** on first open, preserves data when reopened, rejects unsupported future versions and enables foreign keys on every connection. `Decimal` amounts are stored as **TEXT**, not floating-point SQLite REAL. Unknown purchase prices/fees stay `NULL`, not zero.
+`fin.persistence.SQLiteBankRepository` saves bond instruments/lots, deposits, explicit scheduled payments and confirmed receipts in a local SQLite file. It creates **schema version 4** on first open, preserves data when reopened, rejects unsupported future versions and enables foreign keys on every connection. `Decimal` amounts are stored as **TEXT**, not floating-point SQLite REAL. Unknown purchase prices/fees stay `NULL`, not zero.
 
 ```python
 from pathlib import Path
@@ -110,7 +110,7 @@ from fin.persistence import SQLiteBankRepository
 
 Path("data").mkdir(exist_ok=True)
 with SQLiteBankRepository(Path.home() / ".local/share/fin/fin.sqlite3") as repository:
-    assert repository.schema_version() == 3
+    assert repository.schema_version() == 4
     # repository.add_bond_lot(lot)
     # repository.add_payment(scheduled_payment)
     # repository.add_receipt(actual_receipt)
@@ -136,6 +136,29 @@ Equivalent commands (run from the repository root):
 
 Schema migrations run in a single transaction; each repository write is atomic. This is **storage of contracts and receipts**, not a ledger that automatically credits account balances. The opening snapshot, ledger, backup/restore and UI arrive in later PRs. Do not delete the SQLite database with `git clean -fdx` or similar cleanup commands.
 
+## Monthly cash reconciliation (SQLite v4)
+
+Bank lets you save one month-end control snapshot containing **observed cash for every
+account** (including explicit zeroes), with the calculated account balances saved
+as immutable comparison evidence. The snapshot does **not** change the actual
+cash ledger. Review each difference separately and, if it is real, enter a reason
+and confirm the suggested signed adjustment. Fin posts exactly one linked
+`correction` event on that month-end date; it cannot be repeated or edited
+through the ordinary cash-event form. A stale confirmation is rejected if the
+ledger has changed since the page was displayed; refresh before approving.
+
+- Observations are end-of-day closing values on the last calendar day of the
+  month, strictly after the initial opening snapshot. The next full snapshot is
+  saved separately; no earlier observation is silently replaced.
+- Reconciliation is per account and per currency; there is no implicit FX and
+  no automatic booking of coupons, principal or other planned payments.
+- SQLite migrates atomically from v1/v2/v3 to v4, preserving existing balances,
+  investment schedules and cash events. Run `Fin: DB Init` to apply the migration
+  after backing up your private database, then `Fin: DB Status` to verify it.
+- Changes to older events can alter historical calculated balances. Fin retains
+  the originally captured calculation and displays the current calculation
+  separately rather than rewriting the evidence.
+
 ## Cash accounts, opening snapshot and dated movements (SQLite v2)
 
 The offline `fin.domain.accounts` module defines `CashAccount`, `OpeningSnapshot`, `CashEvent` and `actual_balances`. `fin.persistence.SQLiteCashRepository` uses the **same SQLite file** as `SQLiteBankRepository`. Existing v1 databases migrate in place to v2; bond lots, deposits and payment histories are retained.
@@ -143,7 +166,7 @@ The offline `fin.domain.accounts` module defines `CashAccount`, `OpeningSnapshot
 - Create all cash/bank accounts first and save one **end-of-day** opening snapshot, with an amount for every account (including confirmed zero). The initial balances already include any earlier purchases. This first iteration does not support changing the opening snapshot or adding accounts after it; those workflows require explicit later rules.
 - Post dated actual cash movements: external inflows/outflows, own-account transfers (two offsetting legs, same currency), auditable corrections (an explanation is required), and individual **confirmed receipt** events. Movements on the opening day are not replayed. Actual balances are computed from the opening state and confirmed **later** entries only.
 - A scheduled coupon/interest/principal does **not** credit cash automatically. Even an `ActualReceipt` remains separate from account cash until a `CashEvent(kind=RECEIPT)` explicitly links its `receipt_id`, matching date, amount and currency. A unique SQL constraint prevents linking a receipt twice. An unrelated manual inflow is not automatically matched to investments; do not enter the same real-world receipt as both.
-- Different account currencies are never added or converted implicitly. Cross-currency transfers, liability effects, monthly control snapshots, automated posting for sales/purchases and UI entry forms remain later work.
+- Different account currencies are never added or converted implicitly. Cross-currency transfers, liability effects and automated posting for sales/purchases remain later work.
 
 ### Example: initial snapshot and actual cash
 
@@ -187,7 +210,7 @@ The UI runs **only on 127.0.0.1** (loopback), never 0.0.0.0. It has no login and
 
 Bank currently supports creating accounts **before** an immutable dated opening snapshot, entering a complete opening balance for every account, and adding actual inflows/outflows, same-currency transfers and explained corrections. Once the opening snapshot exists, adding new cash accounts is deferred until explicit rules are implemented. You can add bond lots, deposits, whole-lot scheduled coupon/interest/principal payments and separate actual receipts. A receipt must be **explicitly credited** to a cash account before it changes actual cash. **Investments do not auto-debit cash**: record relevant post-opening purchase outflows separately, and do not repeat purchases already included in the initial snapshot.
 
-No market prices, FX conversion, net-worth Total, monthly control snapshot or backup workflow yet. The UI uses the existing SQLite file; no real account data is stored in Git or tests. Make a backup before entering real data. `git clean -fdx` can delete local private files, even if they are ignored by Git.
+No market prices, FX conversion, net-worth Total or backup workflow yet. The UI uses the existing SQLite file; no real account data is stored in Git or tests. Make a backup before entering real data. `git clean -fdx` can delete local private files, even if they are ignored by Git.
 
 
 ## Bank UI updates: editing and safe storage

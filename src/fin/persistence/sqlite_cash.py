@@ -4,6 +4,7 @@ The Cash repository extends the existing Bank repository on the same connection.
 No money enters an account merely because a payment is scheduled or recorded.
 """
 
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -19,6 +20,7 @@ from fin.domain.accounts import (
     actual_balances,
 )
 from fin.domain.money import CurrencyMismatchError, Money
+from fin.domain.monthly_control import MonthlyControl, MonthlyControlBalance, is_month_end
 from fin.persistence.sqlite_bank import SQLiteBankRepository
 
 
@@ -29,8 +31,8 @@ def _money(value: str, currency: str) -> Money:
 class SQLiteCashRepository(SQLiteBankRepository):
     """Access Bank and Cash records in one versioned offline SQLite database.
 
-    V2 supports one immutable opening snapshot of all accounts. New accounts
-    after that snapshot and historical reconciliation are deferred to later PRs.
+    One closing opening snapshot defines the cutoff. Monthly observations are
+    read-only evidence until the user confirms a separate correction event.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -55,6 +57,8 @@ class SQLiteCashRepository(SQLiteBankRepository):
             old = self.get_opening_snapshot()
             if old is None:
                 raise ValueError("Opening snapshot not found")
+            if self._db.execute("SELECT 1 FROM monthly_controls LIMIT 1").fetchone():
+                raise ValueError("Opening snapshot cannot change after monthly controls")
             if self._db.execute(
                 "SELECT 1 FROM cash_events WHERE effective_on <= ? LIMIT 1",
                 (snapshot.as_of.isoformat(),),
@@ -80,6 +84,10 @@ class SQLiteCashRepository(SQLiteBankRepository):
                 raise ValueError("Cash event not found")
             if existing.receipt_id is not None or event.receipt_id is not None:
                 raise ValueError("Credited investment receipts cannot be edited here")
+            if self._db.execute(
+                "SELECT 1 FROM monthly_control_balances WHERE correction_event_id=?", (event.id,)
+            ).fetchone():
+                raise ValueError("Confirmed monthly corrections are immutable")
             opening = self.get_opening_snapshot()
             if opening is None or event.effective_on <= opening.as_of:
                 raise ValueError("Cash event date must follow the opening snapshot")
@@ -243,6 +251,149 @@ class SQLiteCashRepository(SQLiteBankRepository):
                 )
             )
         return tuple(result)
+
+    def record_monthly_control(
+        self,
+        control_id: str,
+        as_of: date,
+        observed: Mapping[str, Money],
+        *,
+        note: str | None = None,
+    ) -> MonthlyControl:
+        """Save a complete monthly observation; do not post cash or hide mismatches."""
+        if (
+            not isinstance(control_id, str)
+            or not control_id.isascii()
+            or not control_id.replace("_", "").replace("-", "").isalnum()
+        ):
+            raise ValueError("Invalid monthly control ID")
+        if not is_month_end(as_of):
+            raise ValueError("Monthly control must be dated on the last calendar day")
+        if note is not None and (not isinstance(note, str) or not note.strip()):
+            raise ValueError("Control note must be nonblank or omitted")
+        with self._db:
+            opening = self.get_opening_snapshot()
+            if opening is None or as_of <= opening.as_of:
+                raise ValueError("Monthly control must follow the opening snapshot")
+            accounts = self.list_accounts()
+            if set(observed) != {account.id for account in accounts}:
+                raise ValueError("Supply an observed balance for every account")
+            calculated = self.balances_on(as_of)
+            for account in accounts:
+                value = observed[account.id]
+                if not isinstance(value, Money):
+                    raise TypeError("Observed balance must be Money")
+                if value.currency != account.currency:
+                    raise CurrencyMismatchError("Monthly control currency mismatch")
+            self._db.execute(
+                "INSERT INTO monthly_controls (id, as_of, note) VALUES (?, ?, ?)",
+                (control_id, as_of.isoformat(), note),
+            )
+            for account in accounts:
+                self._db.execute(
+                    """INSERT INTO monthly_control_balances
+                       (control_id, account_id, observed_amount, calculated_amount, currency)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (
+                        control_id,
+                        account.id,
+                        str(observed[account.id].amount),
+                        str(calculated[account.id].amount),
+                        account.currency,
+                    ),
+                )
+        return next(item for item in self.list_monthly_controls() if item.id == control_id)
+
+    def list_monthly_controls(self) -> tuple[MonthlyControl, ...]:
+        """Return immutable observations and their linked correction event IDs."""
+        snapshots = self._db.execute(
+            "SELECT id, as_of, note FROM monthly_controls ORDER BY as_of, id"
+        ).fetchall()
+        result = []
+        for snapshot in snapshots:
+            rows = self._db.execute(
+                """SELECT account_id, observed_amount, calculated_amount, currency,
+                          correction_event_id
+                   FROM monthly_control_balances WHERE control_id=? ORDER BY account_id""",
+                (snapshot["id"],),
+            ).fetchall()
+            result.append(
+                MonthlyControl(
+                    snapshot["id"],
+                    date.fromisoformat(snapshot["as_of"]),
+                    tuple(
+                        MonthlyControlBalance(
+                            row["account_id"],
+                            _money(row["observed_amount"], row["currency"]),
+                            _money(row["calculated_amount"], row["currency"]),
+                            row["correction_event_id"],
+                        )
+                        for row in rows
+                    ),
+                    snapshot["note"],
+                )
+            )
+        return tuple(result)
+
+    def confirm_monthly_correction(
+        self,
+        control_id: str,
+        account_id: str,
+        *,
+        expected_difference: Money,
+        event_id: str,
+        reason: str,
+    ) -> CashEvent:
+        """Atomically post an explicitly approved delta, linked to its evidence.
+
+        Expected delta is an optimistic form guard: reject when another
+        transaction changed the observed month's computed balance meanwhile.
+        """
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("Explain the monthly correction before confirming it")
+        with self._db:
+            row = self._db.execute(
+                """SELECT c.as_of, b.observed_amount, b.currency, b.correction_event_id
+                   FROM monthly_controls c
+                   JOIN monthly_control_balances b ON b.control_id=c.id
+                   WHERE c.id=? AND b.account_id=?""",
+                (control_id, account_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Monthly control account not found")
+            if row["correction_event_id"] is not None:
+                raise ValueError("Monthly control difference was already corrected")
+            as_of = date.fromisoformat(row["as_of"])
+            current = self.balances_on(as_of)[account_id]
+            observed = _money(row["observed_amount"], row["currency"])
+            difference = observed - current
+            if difference != expected_difference:
+                raise ValueError("Balance changed since review; reload and confirm again")
+            if difference.amount == 0:
+                raise ValueError("No difference to correct")
+            event = CashEvent(
+                event_id,
+                as_of,
+                CashEventKind.CORRECTION,
+                (CashLeg(account_id, difference),),
+                note=reason,
+            )
+            self._db.execute(
+                """INSERT INTO cash_events (id, effective_on, kind, receipt_id, note)
+                   VALUES (?, ?, ?, NULL, ?)""",
+                (event.id, event.effective_on.isoformat(), event.kind.value, event.note),
+            )
+            self._db.execute(
+                """INSERT INTO cash_legs (event_id, account_id, amount, currency)
+                   VALUES (?, ?, ?, ?)""",
+                (event.id, account_id, str(difference.amount), difference.currency),
+            )
+            self._db.execute(
+                """UPDATE monthly_control_balances SET correction_event_id=?
+                   WHERE control_id=? AND account_id=? AND correction_event_id IS NULL""",
+                (event.id, control_id, account_id),
+            )
+        return event
 
     def balances_on(self, as_of: date) -> dict[str, Money]:
         """Actual cash only. Never auto-add future coupons, principal or interest."""

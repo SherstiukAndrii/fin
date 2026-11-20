@@ -3,7 +3,8 @@
 import os
 import secrets
 import sqlite3
-from datetime import UTC, date, datetime
+from calendar import monthrange
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
@@ -46,6 +47,8 @@ _KINDS = {
     "payment",
     "receipt",
     "credit",
+    "control",
+    "confirm_control",
     "edit_account",
     "edit_opening",
     "edit_event",
@@ -302,6 +305,29 @@ def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
             repo.update_payment(payment)
         else:
             repo.add_payment(payment)
+    elif kind == "control":
+        observed = {
+            account.id: Money(_decimal(form, f"balance_{account.id}"), account.currency)
+            for account in repo.list_accounts()
+        }
+        repo.record_monthly_control(
+            _new_id("control"),
+            _date(form, "as_of"),
+            observed,
+            note=_field(form, "note", optional=True) or None,
+        )
+    elif kind == "confirm_control":
+        account_id = _field(form, "account_id")
+        account = repo.get_account(account_id)
+        if account is None:
+            raise ValueError("Unknown account for monthly correction")
+        repo.confirm_monthly_correction(
+            _field(form, "control_id"),
+            account_id,
+            expected_difference=Money(_decimal(form, "expected_difference"), account.currency),
+            event_id=_new_id("correction"),
+            reason=_field(form, "reason"),
+        )
     elif kind == "receipt":
         payment = repo.get_payment(_field(form, "payment_id"))
         if payment is None:
@@ -480,6 +506,31 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
             opening_on=opening.as_of,
             as_of=as_of,
         )
+    controls = []
+    if opening is not None and as_of >= opening.as_of:
+        for snapshot in reversed(repo.list_monthly_controls()):
+            if snapshot.as_of > as_of:
+                continue
+            calculated_now = repo.balances_on(snapshot.as_of)
+            rows = [
+                {
+                    "account": repo.get_account(row.account_id),
+                    "observed": row.observed,
+                    "calculated_at_capture": row.calculated_at_capture,
+                    "current_calculated": calculated_now[row.account_id],
+                    "difference": row.observed - calculated_now[row.account_id],
+                    "correction_event_id": row.correction_event_id,
+                }
+                for row in snapshot.balances
+            ]
+            controls.append(
+                {"id": snapshot.id, "as_of": snapshot.as_of, "note": snapshot.note, "rows": rows}
+            )
+    last_day = monthrange(as_of.year, as_of.month)[1]
+    suggested = as_of if as_of.day == last_day else as_of.replace(day=1) - timedelta(days=1)
+    control_default = (
+        suggested.isoformat() if opening is not None and suggested > opening.as_of else ""
+    )
     events = repo.list_cash_events()
     return {
         "accounts": accounts,
@@ -487,6 +538,8 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
         "bank_names": bank_names,
         "custodian_names": custodian_names,
         "balances": balances,
+        "controls": controls,
+        "control_default": control_default,
         "outlook": outlook,
         "holdings": holdings,
         "payments": payments,
@@ -543,6 +596,8 @@ def create_app(db_path: str | Path) -> FastAPI:
                 "bank_names": (),
                 "custodian_names": (),
                 "balances": {},
+                "controls": (),
+                "control_default": "",
                 "outlook": None,
                 "holdings": (),
                 "payments": (),

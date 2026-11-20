@@ -22,7 +22,7 @@ from fin.domain.bank import (
 )
 from fin.domain.money import CurrencyMismatchError, Money
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA = (
     """CREATE TABLE bond_instruments (
@@ -115,12 +115,31 @@ _SCHEMA_V3 = (
 )
 
 
+_SCHEMA_V4 = (
+    """CREATE TABLE monthly_controls (
+        id TEXT PRIMARY KEY,
+        as_of TEXT NOT NULL UNIQUE,
+        note TEXT
+    )""",
+    """CREATE TABLE monthly_control_balances (
+        control_id TEXT NOT NULL REFERENCES monthly_controls(id) ON DELETE RESTRICT,
+        account_id TEXT NOT NULL REFERENCES cash_accounts(id) ON DELETE RESTRICT,
+        observed_amount TEXT NOT NULL,
+        calculated_amount TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        correction_event_id TEXT UNIQUE REFERENCES cash_events(id) ON DELETE RESTRICT,
+        PRIMARY KEY (control_id, account_id)
+    )""",
+    "CREATE INDEX monthly_control_dates ON monthly_controls (as_of, id)",
+)
+
+
 def _migrate(db: sqlite3.Connection) -> None:
-    """Atomically migrate versions 0/1/2 to 3; never discard historical data."""
+    """Atomically migrate versions 0–3 to 4; never discard historical data."""
     version = db.execute("PRAGMA user_version").fetchone()[0]
     if version == SCHEMA_VERSION:
         return
-    if version not in (0, 1, 2):
+    if version not in (0, 1, 2, 3):
         raise RuntimeError(f"Unsupported Fin database schema version: {version}")
     # Do not use executescript: it commits pending transactions implicitly.
     db.execute("BEGIN IMMEDIATE")
@@ -131,8 +150,12 @@ def _migrate(db: sqlite3.Connection) -> None:
         if version < 2:
             for sql in _SCHEMA_V2:
                 db.execute(sql)
-        for sql in _SCHEMA_V3:
-            db.execute(sql)
+        if version < 3:
+            for sql in _SCHEMA_V3:
+                db.execute(sql)
+        if version < 4:
+            for sql in _SCHEMA_V4:
+                db.execute(sql)
         db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         db.commit()
     except BaseException:
