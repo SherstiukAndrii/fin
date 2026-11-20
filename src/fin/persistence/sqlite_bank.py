@@ -21,7 +21,7 @@ from fin.domain.bank import (
 )
 from fin.domain.money import CurrencyMismatchError, Money
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = (
     """CREATE TABLE bond_instruments (
@@ -70,18 +70,56 @@ _SCHEMA = (
     "CREATE INDEX receipt_payment_idx ON actual_receipts (payment_id, received_on, id)",
 )
 
+_SCHEMA_V2 = (
+    """CREATE TABLE cash_accounts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('cash', 'bank'))
+    )""",
+    """CREATE TABLE opening_snapshot (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        as_of TEXT NOT NULL
+    )""",
+    """CREATE TABLE opening_balances (
+        account_id TEXT PRIMARY KEY REFERENCES cash_accounts(id) ON DELETE RESTRICT,
+        amount TEXT NOT NULL,
+        currency TEXT NOT NULL
+    )""",
+    """CREATE TABLE cash_events (
+        id TEXT PRIMARY KEY,
+        effective_on TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (
+            kind IN ('inflow', 'outflow', 'transfer', 'correction', 'receipt')
+        ),
+        receipt_id TEXT UNIQUE REFERENCES actual_receipts(id) ON DELETE RESTRICT,
+        note TEXT
+    )""",
+    """CREATE TABLE cash_legs (
+        event_id TEXT NOT NULL REFERENCES cash_events(id) ON DELETE RESTRICT,
+        account_id TEXT NOT NULL REFERENCES cash_accounts(id) ON DELETE RESTRICT,
+        amount TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        PRIMARY KEY (event_id, account_id)
+    )""",
+    "CREATE INDEX cash_events_dates ON cash_events (effective_on, id)",
+)
+
 
 def _migrate(db: sqlite3.Connection) -> None:
+    """Apply 0 → 1 → 2 or 1 → 2 atomically, preserving all Bank data."""
     version = db.execute("PRAGMA user_version").fetchone()[0]
     if version == SCHEMA_VERSION:
         return
-    if version != 0:
+    if version not in (0, 1):
         raise RuntimeError(f"Unsupported Fin database schema version: {version}")
-    # One atomic migration. In particular, executescript() must not be used:
-    # it implicitly commits an outstanding transaction.
+    # Do not use executescript: it commits pending transactions implicitly.
     db.execute("BEGIN IMMEDIATE")
     try:
-        for sql in _SCHEMA:
+        if version == 0:
+            for sql in _SCHEMA:
+                db.execute(sql)
+        for sql in _SCHEMA_V2:
             db.execute(sql)
         db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         db.commit()
