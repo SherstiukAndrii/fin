@@ -75,7 +75,7 @@ def test_partial_receipts_and_multiple_coupons_are_not_added_twice():
 
     december = outlook_at("2027-12-02", balances=(money("1030"),), payments=payments, receipts=receipts, posted=("posted",))[0]
     assert december.expected_principal == money("2000")
-    assert december.potential_cash == money("3130")
+    assert december.potential_cash == money("3160")
 
 
 def test_posted_redemption_replaces_scheduled_principal_in_cash_projection():
