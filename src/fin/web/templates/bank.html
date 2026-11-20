@@ -279,12 +279,14 @@
       <p class="small"><strong>План:</strong> ожидаемый купон (проценты по ОВГЗ), проценты депозита или возврат тела в конкретную дату.
       <strong>Факт:</strong> сумма, действительно поступившая из банка. Для одного выпуска ОВГЗ несколько купонов = несколько отдельных строк. Название coupon_march придумывать не нужно — внутренние ID генерируются автоматически.</p>
       {% if payments %}
-      <div class="scroll"><table><thead><tr><th>Конкретная инвестиция</th><th>Дата</th><th>Тип</th><th>План</th><th>Факт</th><th>Остаток</th><th>Состояние</th></tr></thead>
+      <div class="scroll"><table><thead><tr><th>Конкретная инвестиция</th><th>Дата</th><th>Тип</th><th>План</th><th>Факт</th><th>Отклонение</th><th>Остаток</th><th>Состояние</th></tr></thead>
       <tbody>{% for p in payments %}<tr>
         <td>{{ p.holding_label }}</td><td>{{ p.due }}</td>
         <td>{{ {'coupon':'Купон ОВГЗ','interest':'Проценты депозита','principal':'Погашение тела'}.get(p.kind,p.kind) }}</td>
         <td class="num">{{ p.expected.amount|amount }} {{ p.expected.currency }}</td>
-        <td class="num">{{ p.received.amount|amount }}</td><td class="num">{{ p.outstanding.amount|amount }}</td>
+        <td class="num">{{ p.received.amount|amount }}</td>
+        <td class="num">{% if p.received.amount > 0 %}{{ (p.received.amount - p.expected.amount)|amount }}{% else %}—{% endif %}</td>
+        <td class="num">{{ p.outstanding.amount|amount }}</td>
         <td>{{ {'expected':'Ожидается','partial':'Частично','overdue':'Просрочено','paid':'Выплачено','excess':'Сверх плана'}.get(p.status,p.status) }}
           {% if p.excess.amount > 0 %}<div class="muted">+{{ p.excess.amount|amount }} сверх плана</div>{% endif %}
           {% if p.auto_principal %}<div class="muted">Авто: дата и тело вложения</div>
@@ -300,9 +302,18 @@
             </form>
           </details>
           {% endif %}
+          <details><summary>Записать факт</summary>
+            <form method="post" action="/bank/receipt">{{ token() }}
+              <input type="hidden" name="payment_id" value="{{ p.id }}">
+              <label>Дата поступления<input type="date" name="received_on" value="{{ p.due.isoformat() }}" required></label>
+              <label>Фактически получено<input name="amount" value="{{ p.outstanding.amount if p.outstanding.amount > 0 else '' }}" required data-grouped inputmode="decimal"></label>
+              <button class="mini">Записать поступление</button>
+              <p class="small">Сумма редактируется независимо от плана. Зачисление на счёт выполняется отдельно.</p>
+            </form>
+          </details>
         </td></tr>
         {% for item in p.receipts %}<tr class="subrow"><td colspan="2">↳ Реально получено {{ item.item.received_on }}</td>
-          <td colspan="3" class="num">{{ item.item.amount.amount|amount }} {{ item.item.amount.currency }}</td>
+          <td colspan="4" class="num">{{ item.item.amount.amount|amount }} {{ item.item.amount.currency }}</td>
           <td colspan="2">{% if item.posted %}Зачислено на счёт
             {% elif opening %}
             <form method="post" action="/bank/credit">{{ token() }}
