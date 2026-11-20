@@ -1,10 +1,38 @@
-# Fin MVP open questions
+# Fin MVP implementation details and remaining technical questions
 
-The MVP can proceed with the documented financial rules. The questions below cover additional behavior to consider after the scheduled cash projection is in use. [MVP specification](mvp.md) · [Domain model](domain-model.md)
+**All 16 product choices Q01–Q16 are approved.** They are documented in the [MVP specification](mvp.md), [domain model](domain-model.md) and the Fin Google Doc. None of the options Q01–Q16 should be reopened as an undecided product requirement.
 
-| Area | Product decision |
-| --- | --- |
-| Payment reconciliation | Should users be able to confirm an actual payment amount and settlement date? Decide how delayed, partial, and missed payments would affect available cash and whether Fin should keep the original schedule alongside actual receipts. |
-| Changes to a holding | Which unscheduled events should Fin support, such as selling a bond early, withdrawing a deposit with a penalty, or renewing a deposit? Decide what event determines when the original holding closes and what proceeds are available for reuse. |
-| Withholding and settlement charges | Should Fin record taxes, accrued interest at purchase, or settlement charges as separate amounts? Decide which charges affect acquisition cost, which reduce a payment, and where users should see gross and net amounts. |
-| Investment yield | Which calculated yield, if any, should appear alongside the optional target annual yield? If Fin calculates a yield from dated contributions and receipts, decide which fees and cashflows enter the calculation and how to handle positions whose cashflows do not produce a unique yield. |
+This file tracks **technical conventions and edge cases** to decide in the small implementation PR where they matter. Do not silently choose a convention that contradicts the approved model.
+
+## Before implementing the relevant calculation
+
+| Module | Technical detail to settle | Constraint already approved |
+| --- | --- | --- |
+| Fire: calendar normalization | Exact annualization with actual calendar days, leap years and a selected 3/6/12-month/all-history window. Decide how zero-event periods are distinguished from unknown history. | Realized net income / daily-average invested cost; annualize short history with warning; missing reliable data is not zero. |
+| Fire: multiple currencies | How to value historical investment income and cost basis when transactions were in different currencies; document FX date convention and missing-rate behavior. | No invented profits, no unobserved FX rates, no asset revaluation in realized returns. |
+| Deposit/bond valuation | Define instrument-specific dirty/clean price, accrued interest, estimate fallback, acquisition fees and the release of cost basis on partial principal repayments. | Total uses dated market/estimated value; purchase cost is separate; never double-count coupons/principal. |
+| Sale proceeds for Free | How to handle *unknown* exit fees, spread, liquidation discount or taxes; how to communicate low-confidence net proceeds. | Free uses net expected sale amount and must show caveats instead of treating unknown charges as zero. |
+| Historical FX graph | Define explicit FX pair direction, permitted inverse/cross conversions and rounding of the displayed conversion. | Use latest observed rate **on/before evaluation date**, warn after 7 days, mark Total incomplete if no rate. |
+| Contributions and control snapshots | Choose the day of the month on which a contribution is forecast, the precise cutoff for day-end snapshots, and the workflow for proposing/confirming reconciliation events. | Effective-dated monthly net contributions plus one-off events, observable monthly corrections, no silent mutation. |
+| Payment settlement | How to treat overpayments, late payment on a day shared with another event, reversals and charges, and how to match several receipts to one scheduled obligation. | Plan versus fact stays separate; partial receipts are recorded individually; actual cash only on receipt. |
+| Monthly/daily views | Define which date ranges enable the daily view, aggregation boundaries and how month-end snapshots display missing values. | Monthly points for the long (up to 50-year) forecast; daily detail for short periods. |
+| Asset price freshness | Specific warning threshold per asset category, including manual property appraisals versus quoted securities. | Price and source dates stored; staleness depends on asset type; never use a single universal seven-day rule for every price. |
+| Backup and recovery | Frequency, retention, target directory and atomic snapshot/restore procedure for SQLite, including integrity test. | Regular local backup, manual export and restore and verified recovery; no requirement for cloud upload. |
+| Financial rounding | Currency-specific posting precision, instrument-specific fractional quantities and display precision, including error tolerance for exponential calculations. | Use Decimal; do not round arbitrary intermediates or equate 0 with unknown. |
+
+## Explicitly deferred features
+
+- Official APIs for FX, market prices, inflation and securities data; manual entry and offline operation remain available when adapters arrive.
+- Import of previous operations from CSV/XLSX; start MVP with a manual dated snapshot instead.
+- Bank/broker synchronization, cloud sync and multi-user collaboration.
+- Advanced portfolio scenarios, automatic reinvestment **only if later explicitly approved** (not allowed as default), and sophisticated tax automation.
+- Early bond sales or early deposit closures beyond ordinary dated sell/withdrawal events may require dedicated rules for fees, accrued interest and closing dates.
+
+## Guidance for Codex tasks
+
+1. First link the task to the approved product rule in [mvp.md](mvp.md) and its record/algorithm in [domain-model.md](domain-model.md).
+2. If an edge case above is needed for the PR, propose a **small decision with test examples**; do not invent it.
+3. Provide tests for boundary dates, missing values, zero amounts, duplicate prevention and currency handling.
+4. Keep all changes on a feature branch in a Draft PR. The user reviews and performs the merge manually.
+
+The [Babki reference](reference/babki.md) is **non-normative** UI/workflow inspiration only.
