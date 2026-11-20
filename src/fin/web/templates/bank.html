@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Fin — Bank</title>
+  <style>
+    :root{font:15px system-ui,-apple-system,"Segoe UI",sans-serif;color:#19283a;background:#f5f7fa;color-scheme:light}
+    *{box-sizing:border-box}body{margin:0}header{background:#1c273b;color:white;padding:17px max(15px,calc((100vw - 1100px)/2))}
+    header strong{font-size:24px}header span{padding-left:20px;color:#c2d2e6}
+    main{max-width:1130px;margin:auto;padding:18px 14px 60px}
+    h1{margin:6px 0}h2{font-size:19px;margin:2px 0 12px}h3{font-size:15px}
+    p{line-height:1.45}.small{font-size:12px;color:#607086}
+    .card{background:#fff;border:1px solid #dce4ec;border-radius:12px;margin:13px 0;padding:18px;box-shadow:0 1px 4px #17293d09}
+    .banner,.inline-error{border:1px solid #e1ad74;background:#fff4e8;color:#7f3a13;border-radius:8px;padding:10px;margin:8px 0}
+    .notice{background:#eff9ed;color:#2f6634;border:1px solid #9ccc98;border-radius:8px;padding:7px 10px}
+    .pill{background:#ebefff;color:#2b52a5;border-radius:30px;padding:3px 8px;font-size:12px}
+    .bar{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:11px;margin:11px 0}
+    label{display:block;font-size:12px;font-weight:600;color:#53647b;min-width:105px}
+    input,select{display:block;width:100%;margin-top:4px;padding:9px 8px;border:1px solid #cbd5df;border-radius:7px;background:white;color:#18263d;font:inherit}
+    button{border:0;border-radius:7px;padding:9px 12px;background:#275dbb;color:white;font:inherit;font-weight:600;cursor:pointer;margin:6px 0}
+    button:disabled{opacity:.6;cursor:wait}
+    details{border-top:1px solid #e4eaf1;padding:10px 0}summary{font-size:13px;color:#2354a5;cursor:pointer;font-weight:600;white-space:nowrap}
+    details>form{margin:12px 0 5px;padding:10px;border-radius:9px;background:#f8fbff}
+    table{border-collapse:collapse;width:100%;font-size:13px}th{text-align:left;color:#66758b;font-size:12px}th,td{padding:9px 8px;border-bottom:1px solid #ecf0f5;vertical-align:top}
+    .scroll{overflow-x:auto}td{min-width:75px}.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+    .right{text-align:right}code{background:#edf2f7;padding:2px 4px}footer{color:#8290a3;font-size:12px;margin:30px 0}
+    a{color:#2453a4}.edit{min-width:130px}.mini{font-size:12px;padding:7px}
+    .subrow{background:#f7f9ff}.muted{color:#8591a0;font-size:12px}
+    @media(max-width:680px){main{padding:8px}.card{padding:11px}th,td{padding:7px}}
+  </style>
+  <script src="/assets/bank.js" defer></script>
+</head>
+<body>
+  {% macro token() -%}<input type="hidden" name="csrf" value="{{ csrf }}">{%- endmacro %}
+  {% macro prior(route,key,default='') -%}{{ form_values.get(key,default) if failed_form == route else default }}{%- endmacro %}
+  {% macro chosen(route,key,choice,default='') -%}{% if (form_values.get(key,default) if failed_form == route else default) == choice %}selected{% endif %}{%- endmacro %}
+  <header><strong>fin.</strong><span>Bank</span><span>Overview — позже</span></header>
+  <main>
+    <div class="bar"><div><h1>Bank</h1><p class="small">Деньги и вложения. Плановые выплаты не прибавляются к счёту.</p></div>
+      <form method="get" action="/bank" class="bar"><label>Остатки на дату<input type="date" name="as_of" value="{{ as_of.isoformat() }}" required></label><button>Показать</button></form>
+    </div>
+    {% if form_error %}<div class="banner" role="alert">Запись не сохранена: {{ form_error }}</div>{% endif %}
+    {% if missing_db %}
+    <section class="banner">База не создана. В VS Code запусти <code>Fin: DB Init</code> или <code>python -m fin db init</code>.</section>
+    {% else %}
+    {% if warning %}<div class="banner">{{ warning }}</div>{% endif %}
+
+    {% if babki_rows %}
+    <section class="card" id="babki-import">
+      <h2>Импортировано из Babki <span class="pill">{{ babki_rows|length }}</span></h2>
+      <p class="small">Исходные записи, пока <strong>не учтённые</strong> в реальном остатке или портфеле: у облигаций нет подтверждённых ISIN и графиков купонов, у остатков не задана дата снимка. Они видны для сверки и последующего сопоставления, но не дублируют деньги.</p>
+      <details><summary>Просмотреть импортированные строки</summary>
+        <div class="scroll"><table><thead><tr><th>Лист / строка</th><th>Тип</th><th>Название</th><th>Дата</th><th>Штук / сумма</th><th>Цена</th></tr></thead>
+        <tbody>{% for item in babki_rows %}{% set v = item['values'] %}<tr>
+          <td>{{ item.sheet }} · {{ item.row }}</td>
+          <td>{{ {'instrument':'Инструмент','purchase':'Покупка','account_value':'Остаток','rates':'Курс','inflation_assumption':'Инфляция'}.get(item.kind,item.kind) }}</td>
+          <td>{{ v.get('name',v.get('account_type','—')) }} {{ v.get('currency','') }}</td>
+          <td>{{ v.get('acquired_on',v.get('maturity','—')) }}</td>
+          <td class="num">{{ v.get('quantity',v.get('amount',v.get('total_quantity','—'))) }}</td>
+          <td class="num">{{ v.get('unit_purchase_price_uah',v.get('projected_proceeds_per_unit_uah','—')) }}</td>
+        </tr>{% endfor %}</tbody></table></div>
+      </details>
+    </section>
+    {% endif %}
+
+    <section class="card" id="accounts"><h2>Счета и остатки</h2>
+      {% if accounts %}
+      <div class="scroll"><table><thead><tr><th>Счёт</th><th>Тип</th><th>Валюта</th><th>На {{ as_of }}</th><th></th></tr></thead>
+      <tbody>{% for a in accounts %}<tr><td><strong>{{ a.name }}</strong></td><td>{{ a.kind.value }}</td>
+        <td>{{ a.currency }}</td><td class="num">{% if a.id in balances %}{{ balances[a.id].amount|amount }} {{ a.currency }}{% else %}—{% endif %}</td>
+        <td><details><summary>Изменить</summary>
+          <form action="/bank/edit_account" method="post">{{ token() }}
+            <input type="hidden" name="id" value="{{ a.id }}"><input type="hidden" name="currency" value="{{ a.currency }}">
+            <label>Название<input name="name" required value="{{ a.name }}"></label>
+            <label>Тип<select name="kind"><option value="bank" {% if a.kind.value == 'bank' %}selected{% endif %}>Банковский</option><option value="cash" {% if a.kind.value == 'cash' %}selected{% endif %}>Наличные</option></select></label>
+            <button class="mini">Сохранить</button>
+          </form></details></td>
+      </tr>{% endfor %}</tbody></table></div>
+      <p class="small">Суммы в разных валютах не складываются без датированного курса.</p>
+      {% else %}<p class="small">Счета пока не созданы.</p>{% endif %}
+
+      {% if not opening %}
+      <div class="banner">Сначала создай все счета, затем зафиксируй начальный снимок с остатками на выбранную дату.</div>
+      <details id="form-account" open><summary>1. Добавить счёт</summary>
+        <form method="post" action="/bank/account">{{ token() }}
+          <div class="grid">
+          <label>Название<input name="name" placeholder="Моно UAH" value="{{ prior('account','name') }}" required></label>
+          <label>Валюта<input name="currency" value="{{ prior('account','currency','UAH') }}" required></label>
+          <label>Тип<select name="kind"><option value="bank" {{ chosen('account','kind','bank','bank') }}>Банковский</option><option value="cash" {{ chosen('account','kind','cash','bank') }}>Наличные</option></select></label></div>
+          <button>Добавить счёт</button><p class="small">ID создаётся автоматически.</p>
+        </form></details>
+      {% if accounts %}
+      <details id="form-opening" open><summary>2. Начальные остатки (однократно)</summary>
+        <form method="post" action="/bank/opening">{{ token() }}
+          <div class="grid"><label>Дата на конец дня<input name="as_of" type="date" value="{{ prior('opening','as_of') }}" required></label>
+          {% for a in accounts %}<label>{{ a.name }} ({{ a.currency }})<input name="balance_{{ a.id }}" value="{{ prior('opening','balance_' ~ a.id) }}" required placeholder="0"></label>{% endfor %}</div>
+          <button>Зафиксировать</button><p class="small">Укажи все остатки, включая известные нули. Учтённые до этой даты покупки повторно не списываются.</p>
+        </form></details>
+      {% endif %}
+      {% else %}
+      <p class="small">Начальный снимок: {{ opening.as_of }}. Перед исправлением сохраняется резервная копия.</p>
+      <details><summary>Исправить начальный снимок</summary>
+        <form method="post" action="/bank/edit_opening">{{ token() }}
+          <div class="grid"><label>Дата<input type="date" name="as_of" value="{{ opening.as_of.isoformat() }}" required></label>
+          {% for b in opening.balances %}<label>{{ b.account_id }} · {{ b.amount.currency }}
+          <input name="balance_{{ b.account_id }}" value="{{ b.amount.amount }}" required></label>{% endfor %}</div>
+          <button class="mini">Сохранить</button>
+        </form></details>
+      <details id="form-event" open><summary>Новая денежная операция</summary>
+        <form method="post" action="/bank/event">{{ token() }}
+          <div class="grid">
+            <label>Дата<input type="date" name="effective_on" value="{{ prior('event','effective_on') }}" required></label>
+            <label>Тип<select name="kind">
+              {% for val,title in [('inflow','Поступление'),('outflow','Расход'),('transfer','Между своими счетами'),('correction','Корректировка')] %}
+              <option value="{{ val }}" {{ chosen('event','kind',val,'inflow') }}>{{ title }}</option>{% endfor %}
+            </select></label>
+            <label>Откуда / счёт<select name="account_id">{% for a in accounts %}<option value="{{ a.id }}" {{ chosen('event','account_id',a.id) }}>{{ a.name }} ({{ a.currency }})</option>{% endfor %}</select></label>
+            <label>Куда (для перевода)<select name="to_account_id"><option value="">—</option>{% for a in accounts %}<option value="{{ a.id }}" {{ chosen('event','to_account_id',a.id) }}>{{ a.name }}</option>{% endfor %}</select></label>
+            <label>Сумма<input name="amount" value="{{ prior('event','amount') }}" required placeholder="100.00"></label>
+            <label>Причина корректировки<input name="note" value="{{ prior('event','note') }}"></label>
+          </div><button>Записать операцию</button>
+          <p class="small">Расход и перевод вводи положительным числом; корректировку — со знаком плюс или минус.</p>
+        </form></details>
+      {% endif %}
+    </section>
+
+    <section class="card" id="holdings">
+      <h2>Вложения <span class="pill">{{ holdings|length }}</span></h2>
+      {% if holdings %}
+      <div class="scroll"><table><thead><tr><th>Тип</th><th>Инструмент / банк</th><th>Количество / тело</th><th>Себестоимость</th><th>Погашение</th><th></th></tr></thead>
+      <tbody>{% for h in holdings %}<tr><td>{{ h.type }}</td><td><strong>{{ h.name }}</strong></td>
+        <td class="num">{{ h.amount }} {{ h.currency }}</td><td class="num">{{ h.cost }}</td>
+        <td>{{ h.maturity }}</td>
+        <td><details><summary>Изменить</summary>
+          {% if h.type == 'OVGZ / bond' %}
+          <form method="post" action="/bank/edit_bond">{{ token() }}
+            <input type="hidden" name="id" value="{{ h.id }}"><input type="hidden" name="currency" value="{{ h.currency }}">
+            <p class="small">ISIN {{ h.model.instrument.isin }}; номинал и дата погашения остаются неизменными.</p>
+            <div class="grid">
+              <label>Куплено<input type="date" name="acquired_on" value="{{ h.model.acquired_on.isoformat() }}" required></label>
+              <label>Штук<input type="number" name="quantity" value="{{ h.model.quantity }}" min="1" required></label>
+              <label>Цена за штуку<input name="unit_price" value="{{ h.model.unit_price.amount if h.model.unit_price else '' }}"></label>
+              <label>Комиссия за лот<input name="paid_fees" value="{{ h.model.paid_fees.amount if h.model.paid_fees else '' }}"></label>
+            </div><button class="mini">Сохранить</button>
+          </form>
+          {% else %}
+          <form method="post" action="/bank/edit_deposit">{{ token() }}
+            <input type="hidden" name="id" value="{{ h.id }}"><input type="hidden" name="currency" value="{{ h.currency }}">
+            <div class="grid">
+              <label>Банк<input name="bank" value="{{ h.model.bank }}" required></label>
+              <label>Тело<input name="principal" value="{{ h.model.principal.amount }}" required></label>
+              <label>Открыт<input name="opened_on" type="date" value="{{ h.model.opened_on.isoformat() }}" required></label>
+              <label>Погашение<input name="matures_on" type="date" value="{{ h.model.matures_on.isoformat() }}" required></label>
+              <label>Годовая ставка долей<input name="annual_rate" value="{{ h.model.annual_rate if h.model.annual_rate is not none else '' }}"></label>
+            </div><button class="mini">Сохранить</button>
+          </form>{% endif %}
+        </details></td></tr>{% endfor %}</tbody></table></div>
+      {% else %}<p class="small">Вложения ещё не внесены. Строки из Babki выше пока черновые.</p>{% endif %}
+      <details id="form-bond" {% if failed_form == 'bond' %}open{% endif %}><summary>Добавить ОВГЗ / облигацию</summary>
+        <form method="post" action="/bank/bond">{{ token() }}
+          {% if failed_form == 'bond' %}<p class="banner" role="alert">{{ form_error }}</p>{% endif %}
+          <div class="grid">
+            <label>ISIN выпуска<input name="isin" placeholder="UA1234567890" value="{{ prior('bond','isin') }}" required></label>
+            <label>Валюта<input name="currency" value="{{ prior('bond','currency','UAH') }}" required></label>
+            <label>Номинал 1 шт.<input name="face_value" value="{{ prior('bond','face_value') }}" required></label>
+            <label>Количество<input type="number" name="quantity" min="1" value="{{ prior('bond','quantity') }}" required></label>
+            <label>Покупка<input type="date" name="acquired_on" value="{{ prior('bond','acquired_on') }}" required></label>
+            <label>Погашение<input type="date" name="matures_on" value="{{ prior('bond','matures_on') }}" required></label>
+            <label>Цена покупки 1 шт. (можно пусто)<input name="unit_price" value="{{ prior('bond','unit_price') }}"></label>
+            <label>Комиссия за весь лот (можно пусто)<input name="paid_fees" value="{{ prior('bond','paid_fees') }}"></label>
+          </div><button>Сохранить лот</button>
+          <p class="small">ID лота генерируется автоматически. Новая покупка не списывается с денежного счёта сама.</p>
+        </form>
+      </details>
+      <details id="form-deposit" {% if failed_form == 'deposit' %}open{% endif %}><summary>Добавить депозит</summary>
+        <form method="post" action="/bank/deposit">{{ token() }}
+          <div class="grid">
+            <label>Банк<input name="bank" value="{{ prior('deposit','bank') }}" required></label>
+            <label>Валюта<input name="currency" value="{{ prior('deposit','currency','UAH') }}" required></label>
+            <label>Тело депозита<input name="principal" value="{{ prior('deposit','principal') }}" required></label>
+            <label>Открыт<input name="opened_on" type="date" value="{{ prior('deposit','opened_on') }}" required></label>
+            <label>Погашение<input name="matures_on" type="date" value="{{ prior('deposit','matures_on') }}" required></label>
+            <label>Годовая ставка, доля (0.15 = 15%)<input name="annual_rate" value="{{ prior('deposit','annual_rate') }}"></label>
+          </div><button>Сохранить депозит</button>
+          <p class="small">ID создаётся автоматически. Расчёт процентов по ставке не подменяет договорной график выплат.</p>
+        </form>
+      </details>
+    </section>
+
+    <section class="card" id="payments">
+      <h2>Календарь плановых и фактических выплат</h2>
+      <p class="small"><strong>План:</strong> ожидаемый купон (проценты по ОВГЗ), проценты депозита или возврат тела в конкретную дату.
+      <strong>Факт:</strong> сумма, действительно поступившая из банка. Для одного выпуска ОВГЗ несколько купонов = несколько отдельных строк. Название coupon_march придумывать не нужно — внутренние ID генерируются автоматически.</p>
+      {% if payments %}
+      <div class="scroll"><table><thead><tr><th>Конкретная инвестиция</th><th>Дата</th><th>Тип</th><th>План</th><th>Факт</th><th>Остаток</th><th>Состояние</th></tr></thead>
+      <tbody>{% for p in payments %}<tr>
+        <td>{{ p.holding_label }}</td><td>{{ p.due }}</td>
+        <td>{{ {'coupon':'Купон ОВГЗ','interest':'Проценты депозита','principal':'Погашение тела'}.get(p.kind,p.kind) }}</td>
+        <td class="num">{{ p.expected.amount|amount }} {{ p.expected.currency }}</td>
+        <td class="num">{{ p.received.amount|amount }}</td><td class="num">{{ p.outstanding.amount|amount }}</td>
+        <td>{{ {'expected':'Ожидается','partial':'Частично','overdue':'Просрочено','paid':'Выплачено'}.get(p.status,p.status) }}
+          <details><summary>Изменить план</summary>
+            <form method="post" action="/bank/edit_payment">{{ token() }}
+              <input type="hidden" name="id" value="{{ p.id }}"><input type="hidden" name="holding_id" value="{{ p.holding }}">
+              <label>Тип<select name="kind">{% for kind,title in [('coupon','Купон'),('interest','Проценты'),('principal','Погашение')] %}
+                <option value="{{ kind }}" {% if p.kind == kind %}selected{% endif %}>{{ title }}</option>{% endfor %}</select></label>
+              <label>Дата<input name="due_on" type="date" value="{{ p.due.isoformat() }}" required></label>
+              <label>Сумма за весь лот<input name="expected" value="{{ p.expected.amount }}" required></label>
+              <button class="mini">Сохранить</button>
+            </form>
+          </details>
+        </td></tr>
+        {% for item in p.receipts %}<tr class="subrow"><td colspan="2">↳ Реально получено {{ item.item.received_on }}</td>
+          <td colspan="3" class="num">{{ item.item.amount.amount|amount }} {{ item.item.amount.currency }}</td>
+          <td colspan="2">{% if item.posted %}Зачислено на счёт
+            {% elif opening %}
+            <form method="post" action="/bank/credit">{{ token() }}
+              <input type="hidden" name="receipt_id" value="{{ item.item.id }}"><input type="hidden" name="payment_id" value="{{ p.id }}">
+              <label>Зачислить на<select name="account_id" required>{% for a in accounts if a.currency == item.item.amount.currency %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></label>
+              <button class="mini">Зачислить</button>
+            </form>
+            {% else %}Ожидает начального снимка{% endif %}
+            {% if not item.posted %}
+            <details><summary>Изменить фактическое поступление</summary>
+              <form method="post" action="/bank/edit_receipt">{{ token() }}
+                <input type="hidden" name="id" value="{{ item.item.id }}"><input type="hidden" name="payment_id" value="{{ p.id }}">
+                <label>Дата<input type="date" name="received_on" value="{{ item.item.received_on.isoformat() }}" required></label>
+                <label>Сумма<input name="amount" value="{{ item.item.amount.amount }}" required></label>
+                <button class="mini">Сохранить</button>
+              </form>
+            </details>{% endif %}
+          </td>
+        </tr>{% endfor %}
+      {% endfor %}</tbody></table></div>
+      {% else %}<p class="small">Выплат пока нет.</p>{% endif %}
+      {% if holdings %}
+      <details id="form-payment" {% if failed_form == 'payment' %}open{% endif %}><summary>Добавить плановую выплату</summary>
+        <form method="post" action="/bank/payment">{{ token() }}
+          <div class="grid">
+            <label>Выбрать конкретную инвестицию<select name="holding_id">{% for h in holdings %}<option value="{{ h.id }}" {{ chosen('payment','holding_id',h.id) }}>{{ h.label }}</option>{% endfor %}</select></label>
+            <label>Тип выплаты<select name="kind"><option value="coupon" {{ chosen('payment','kind','coupon','coupon') }}>Купон ОВГЗ</option><option value="interest" {{ chosen('payment','kind','interest','coupon') }}>Проценты депозита</option><option value="principal" {{ chosen('payment','kind','principal','coupon') }}>Возврат тела</option></select></label>
+            <label>Ожидаемая дата<input type="date" name="due_on" value="{{ prior('payment','due_on') }}" required></label>
+            <label>Ожидаемая сумма за весь лот<input name="expected" value="{{ prior('payment','expected') }}" required></label>
+          </div><button>Добавить в график</button>
+          <p class="small">Пример: 200 ОВГЗ × 40 ₴ купона на штуку = <strong>8 000 ₴ за весь лот</strong>. Вводи 8 000, не 40. Дату бери из графика банка.</p>
+        </form>
+      </details>{% endif %}
+      {% if payments %}
+      <details id="form-receipt" {% if failed_form == 'receipt' %}open{% endif %}><summary>Добавить фактически полученные деньги</summary>
+        <form method="post" action="/bank/receipt">{{ token() }}
+          <div class="grid">
+            <label>Какая выплата<select name="payment_id">{% for p in payments %}<option value="{{ p.id }}" {{ chosen('receipt','payment_id',p.id) }}>{{ p.holding_label }} · {{ p.due }} · {{ p.expected.amount|amount }} {{ p.expected.currency }}</option>{% endfor %}</select></label>
+            <label>Когда пришли<input type="date" name="received_on" value="{{ prior('receipt','received_on') }}" required></label>
+            <label>Фактически пришло<input name="amount" value="{{ prior('receipt','amount') }}" required></label>
+          </div><button>Записать поступление</button>
+          <p class="small">После записи нажми «Зачислить на» у поступления. Пока не зачислено, реальные остатки не изменятся.</p>
+        </form>
+      </details>{% endif %}
+    </section>
+
+    <section class="card" id="events"><h2>Последние денежные операции</h2>
+      {% if events %}
+      <div class="scroll"><table><thead><tr><th>Дата</th><th>Тип</th><th>Счета</th><th>Изменения</th><th>Примечание / изменение</th></tr></thead>
+      <tbody>{% for e in events %}<tr>
+        <td>{{ e.effective_on }}</td><td>{{ e.kind.value }}</td>
+        <td>{% for leg in e.legs %}{{ leg.account_id }}{% if not loop.last %} / {% endif %}{% endfor %}</td>
+        <td class="num">{% for leg in e.legs %}{{ leg.change.amount|amount }} {{ leg.change.currency }}{% if not loop.last %} / {% endif %}{% endfor %}</td>
+        <td>{{ e.note or '—' }}
+          {% if e.receipt_id is none %}
+          <details><summary>Изменить операцию</summary>
+            <form method="post" action="/bank/edit_event">{{ token() }}
+              <input type="hidden" name="id" value="{{ e.id }}">
+              <label>Дата<input name="effective_on" type="date" value="{{ e.effective_on.isoformat() }}" required></label>
+              <label>Тип<select name="kind">{% for k,title in [('inflow','Поступление'),('outflow','Расход'),('transfer','Перевод'),('correction','Корректировка')] %}<option value="{{ k }}" {% if e.kind.value == k %}selected{% endif %}>{{ title }}</option>{% endfor %}</select></label>
+              <label>Счёт<select name="account_id">{% for a in accounts %}<option value="{{ a.id }}" {% if e.legs[0].account_id == a.id %}selected{% endif %}>{{ a.name }}</option>{% endfor %}</select></label>
+              <label>Куда (для перевода)<select name="to_account_id"><option value="">—</option>{% for a in accounts %}<option value="{{ a.id }}" {% if e.legs|length == 2 and e.legs[1].account_id == a.id %}selected{% endif %}>{{ a.name }}</option>{% endfor %}</select></label>
+              <label>Сумма (расход/перевод положит.)<input name="amount" value="{{ (e.legs[0].change.amount|abs) if e.kind.value in ['outflow','transfer'] else e.legs[0].change.amount }}" required></label>
+              <label>Пояснение<input name="note" value="{{ e.note or '' }}"></label>
+              <button class="mini">Сохранить</button>
+            </form>
+          </details>
+          {% else %}<div class="small">Поступление по инвестиции; не редактируется напрямую</div>{% endif %}
+        </td>
+      </tr>{% endfor %}</tbody></table></div>
+      {% else %}<p class="small">Подтверждённых операций пока нет.</p>{% endif %}
+    </section>
+    {% endif %}
+    <footer>Fin · локальный браузер · данные SQLite в личной папке · без рыночной переоценки и FX · не открывать в сеть без авторизации</footer>
+  </main>
+</body>
+</html>

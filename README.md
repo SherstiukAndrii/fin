@@ -2,7 +2,7 @@
 
 Single-user, offline-first personal finance app for Windows and Linux. The planned MVP contains **Bank** and **Overview**; see [MVP requirements](docs/mvp.md) and the [domain model](docs/domain-model.md).
 
-**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank/Cash persistence v2**. Actual cash ledger and dated opening snapshot are now available in Python; no FX engine or web UI yet. Future investment calculators and statement analysis are documented under `docs/`.
+**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank/Cash persistence v2**. Actual cash ledger and dated opening snapshot are available in Python. First local Bank browser UI is available; Overview/FX still to come. Future investment calculators and statement analysis are documented under `docs/`.
 
 ## Development with Windows + WSL (Ubuntu) + VS Code
 
@@ -30,14 +30,15 @@ The installed `fin` command is equivalent to `python -m fin`. Without subcommand
 
 3. From **Terminal → Run Task…** (or **Ctrl+Shift+P → Tasks: Run Task**) choose a project task:
    - **Fin: Run** — launch the current CLI scaffold (`python -m fin`), not a web server.
-   - **Fin: DB Init** — create/migrate `data/fin.sqlite3` (safe to run again).
+   - **Fin: DB Init** — create/migrate `~/.local/share/fin/fin.sqlite3`, outside the repository (safe to rerun).
    - **Fin: DB Status** — read-only schema and integrity status of the local database.
+   - **Fin: Web** — run the Bank browser UI on `http://127.0.0.1:8765` (first run **Fin: DB Init**).
    - **Fin: Tests** — run `pytest -v`, also the default **Run Test Task**.
    - **Fin: Ruff Check** — run `ruff check .` (lint).
    - **Fin: Ruff Format Check** — run `ruff format --check .` (non-mutating format verification).
    - **Fin: Ruff Format** — run `ruff format .` to format files.
    - **Fin: Check** — run lint, format check, and tests sequentially; also the default **Run Build Task** (`Ctrl+Shift+B`).
-   - **Fin: Setup** — create the local `.venv` if missing; **Fin: Install** — install/update `.[dev]` into it.
+   - **Fin: Setup** — idempotent WSL venv setup; **Fin: Install** — run Setup and install/update `.[dev]`; **Fin: Bootstrap** — Install + DB Init; **Fin: Babki Import** — prompt for the XLSX path.
 4. Read results in the integrated terminal. **Fin: Check** should pass before opening or merging a PR.
 
 All shared VS Code project settings and tasks live in **`fin.code-workspace`** (not `.vscode/tasks.json`). Open that workspace in WSL. Task commands use `.venv/bin/python` and `.venv/bin/ruff` explicitly, so shell activation is unnecessary. If those executables are missing, first run **Fin: Setup**, then **Fin: Install**.
@@ -46,7 +47,7 @@ All shared VS Code project settings and tasks live in **`fin.code-workspace`** (
 
 Run **Fin: Check** (or `Ctrl+Shift+B`) in VS Code. It executes the same lint, format-check, and pytest commands used by GitHub Actions.
 
-GitHub Actions runs the same checks with Python 3.12 and 3.13 for pull requests targeting `master`. Keep real account data, statements, tokens and credentials out of the repository, tests and PR descriptions.
+GitHub Actions runs the same checks with Python 3.12, 3.13 and 3.14 for pull requests targeting `master`. Keep real account data, statements, tokens and credentials out of the repository, tests and PR descriptions.
 
 ## Project layout
 
@@ -108,7 +109,7 @@ from pathlib import Path
 from fin.persistence import SQLiteBankRepository
 
 Path("data").mkdir(exist_ok=True)
-with SQLiteBankRepository(Path("data/fin.sqlite3")) as repository:
+with SQLiteBankRepository(Path.home() / ".local/share/fin/fin.sqlite3") as repository:
     assert repository.schema_version() == 1
     # repository.add_bond_lot(lot)
     # repository.add_payment(scheduled_payment)
@@ -119,7 +120,7 @@ Create the parent directory before opening a file-based database. Files under `d
 
 ### Initialize and inspect the database
 
-In VS Code open `fin.code-workspace` in WSL → **Terminal → Run Task… → Fin: DB Init**. This creates `data/fin.sqlite3` and applies the existing schema migrations. The task is safe to rerun. Use **Fin: DB Status** to inspect the path, schema version and read-only integrity checks.
+In VS Code open `fin.code-workspace` in WSL → **Terminal → Run Task… → Fin: DB Init**. This creates `~/.local/share/fin/fin.sqlite3` and applies the existing schema migrations. The task is safe to rerun. Use **Fin: DB Status** to inspect the path, schema version and read-only integrity checks.
 
 Equivalent commands (run from the repository root):
 
@@ -149,12 +150,13 @@ The offline `fin.domain.accounts` module defines `CashAccount`, `OpeningSnapshot
 ```python
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from fin.domain.accounts import AccountKind, CashAccount, OpeningBalance, OpeningSnapshot
 from fin.domain.money import Money
 from fin.persistence import SQLiteCashRepository
 
-with SQLiteCashRepository("data/fin.sqlite3") as db:
+with SQLiteCashRepository(Path.home() / ".local/share/fin/fin.sqlite3") as db:
     db.add_account(CashAccount("wallet", "Cash", "UAH", AccountKind.CASH))
     db.save_opening_snapshot(
         OpeningSnapshot(
@@ -167,3 +169,71 @@ with SQLiteCashRepository("data/fin.sqlite3") as db:
 
 The example assumes a **new empty database** with an existing `data/` folder. For a real existing database, use its own accounts and opening snapshot, and do not run the example twice. Local financial databases and their SQLite sidecars are excluded from Git, **not** protected from filesystem deletion. Backup/restore comes later.
 
+
+## First Bank browser screen (local-only)
+
+From the repository in WSL, run **Fin: Install** after switching branches (new dependencies), then **Fin: DB Init** and **Fin: Web** via `fin.code-workspace`. Visit **http://127.0.0.1:8765/bank** from the same machine. Equivalent shell commands:
+
+```bash
+.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/python -m fin db init
+.venv/bin/python -m fin web
+# Optional: .venv/bin/python -m fin web --path ~/private/fin.sqlite3 --port 8766
+```
+
+Failed form submissions now keep all entered fields and show validation errors inline; no need to retype an entire OVGZ lot. TestClient uses the supported `httpx2` dev dependency, checked in CI on Python 3.12, 3.13 and 3.14.
+
+The UI runs **only on 127.0.0.1** (loopback), never 0.0.0.0. It has no login and is **not safe to expose directly to public internet or a VPN**. Cross-origin form posting uses an in-memory CSRF token, a restricted Host header, no-store and restrictive browser headers; all HTML inputs are escaped by Jinja2. These are local-development protections, not full authentication.
+
+Bank currently supports creating accounts **before** an immutable dated opening snapshot, entering a complete opening balance for every account, and adding actual inflows/outflows, same-currency transfers and explained corrections. Once the opening snapshot exists, adding new cash accounts is deferred until explicit rules are implemented. You can add bond lots, deposits, whole-lot scheduled coupon/interest/principal payments and separate actual receipts. A receipt must be **explicitly credited** to a cash account before it changes actual cash. **Investments do not auto-debit cash**: record relevant post-opening purchase outflows separately, and do not repeat purchases already included in the initial snapshot.
+
+No market prices, FX conversion, net-worth Total, monthly control snapshot or backup workflow yet. The UI uses the existing SQLite file; no real account data is stored in Git or tests. Make a backup before entering real data. `git clean -fdx` can delete local private files, even if they are ignored by Git.
+
+
+## Bank UI updates: editing, Babki and safe storage
+
+After updating to this PR, use **Fin: Bootstrap** in `fin.code-workspace` once,
+then **Fin: Web**. Separate **Fin: Setup** is idempotent: it keeps an existing
+`.venv`; **Fin: Install** runs Setup first and upgrades project dependencies.
+The UI has editable accounts, opening snapshot, cash events, bond lots,
+deposits, schedules and not-yet-credited actual receipts. Each edit creates a
+**timestamped backup** in `~/.local/share/fin/backups/` before writing.
+Already-credited investment receipts remain immutable; use an explicit cash
+correction rather than changing historical evidence.
+
+The web page formats `120000000` as `120 000 000 (120 млн)`, keeps exact
+Decimal values for storage, and generates IDs automatically. Planned payments
+are explicitly linked to a recognizable holding and dated event; a coupon
+means interest from bonds, while an actual receipt is a confirmed bank credit.
+Browser form submission is asynchronous, with inline error messages; JavaScript
+prevents page jumps while preserving typed values.
+
+### Babki XLSX import
+
+Download your **private** Babki workbook to your WSL computer, outside the Git
+checkout. After `Fin: DB Init` / `Fin: Bootstrap` run:
+
+```bash
+.venv/bin/python -m fin babki import ~/Downloads/Babki.xlsx
+```
+
+Or use **Fin: Babki Import** in `fin.code-workspace` and enter its actual WSL
+file path. The imported rows now appear under **Bank → Импортировано из Babki**.
+This is **staging, not a financial ledger posting**: ISINs, bond face values,
+full coupon schedules and the opening balance date are not confirmed by the
+spreadsheet. Do not count the same purchase or balance twice.
+
+### Data protection / git clean
+
+The default SQLite path is **`~/.local/share/fin/fin.sqlite3`** (or
+`$XDG_DATA_HOME/fin/fin.sqlite3`; optional `$FIN_DB_PATH` environment
+override), **outside this Git checkout**. Running `Fin: DB Init` copies an
+existing legacy `data/fin.sqlite3` to the new path with SQLite's online backup,
+without deleting or overwriting the legacy file. It initializes a new database
+only when no existing database is found. `git clean -fdx` can still delete
+untracked files inside the repository (especially `data/Babki_import.sql`,
+`data/fin.sqlite3` and `.venv`), so do not keep your only copy there.
+
+Import directly from `Babki.xlsx` instead of temporary SQL. Repeated import
+of identical file bytes is idempotent; use the Bank staging view to review it.
+The import does not overwrite accounts, existing OVGZ lots, or cash.

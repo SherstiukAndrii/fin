@@ -171,6 +171,127 @@ class SQLiteBankRepository:
     def schema_version(self) -> int:
         return self._db.execute("PRAGMA user_version").fetchone()[0]
 
+    def update_bond_lot(self, lot: BondLot) -> None:
+        """Edit purchase details without silently rewriting contractual payouts."""
+        with self._db:
+            old = self.get_bond_lot(lot.id)
+            if old is None:
+                raise ValueError("Lot not found")
+            if lot.instrument != old.instrument:
+                raise ValueError("ISIN, nominal and maturity cannot change on an existing lot")
+            payments = self.list_payments(lot.id)
+            if payments and lot.quantity != old.quantity:
+                raise ValueError("Quantity cannot change after scheduling payments")
+            if any(payment.due_on < lot.acquired_on for payment in payments):
+                raise ValueError("Purchase date must precede all scheduled payments")
+            self._db.execute(
+                """UPDATE bond_lots SET acquired_on=?, quantity=?, unit_price=?, paid_fees=?
+                   WHERE id=?""",
+                (
+                    lot.acquired_on.isoformat(),
+                    lot.quantity,
+                    _value(lot.unit_price),
+                    _value(lot.paid_fees),
+                    lot.id,
+                ),
+            )
+
+    def update_deposit(self, deposit: Deposit) -> None:
+        with self._db:
+            old = self.get_deposit(deposit.id)
+            if old is None:
+                raise ValueError("Deposit not found")
+            if deposit.principal.currency != old.principal.currency:
+                raise ValueError("Cannot change currency of an existing deposit")
+            payments = self.list_payments(deposit.id)
+            if any(not deposit.opened_on <= p.due_on <= deposit.matures_on for p in payments):
+                raise ValueError("Payment dates conflict with changed deposit dates")
+            principal = sum(
+                (p.expected.amount for p in payments if p.kind == PaymentKind.PRINCIPAL),
+                Decimal("0"),
+            )
+            if principal > deposit.principal.amount:
+                raise ValueError("Scheduled principal exceeds edited deposit principal")
+            self._db.execute(
+                """UPDATE deposits SET bank=?, principal=?, opened_on=?, matures_on=?,
+                   annual_rate=? WHERE id=?""",
+                (
+                    deposit.bank,
+                    str(deposit.principal.amount),
+                    deposit.opened_on.isoformat(),
+                    deposit.matures_on.isoformat(),
+                    None if deposit.annual_rate is None else str(deposit.annual_rate),
+                    deposit.id,
+                ),
+            )
+
+    def update_payment(self, payment: ScheduledPayment) -> None:
+        with self._db:
+            old = self.get_payment(payment.id)
+            if old is None:
+                raise ValueError("Payment not found")
+            if payment.holding_id != old.holding_id:
+                raise ValueError("Cannot move a payment between holdings")
+            if payment.expected.currency != old.expected.currency:
+                raise CurrencyMismatchError("Cannot change payment currency")
+            bond = self.get_bond_lot(payment.holding_id)
+            deposit = self.get_deposit(payment.holding_id)
+            if bond:
+                if payment.kind not in (PaymentKind.COUPON, PaymentKind.PRINCIPAL):
+                    raise ValueError("Bond requires a coupon or principal payment")
+                start, end = bond.acquired_on, bond.instrument.matures_on
+                max_principal = bond.instrument.face_value.amount * bond.quantity
+            elif deposit:
+                if payment.kind not in (PaymentKind.INTEREST, PaymentKind.PRINCIPAL):
+                    raise ValueError("Deposit requires interest or principal")
+                start, end = deposit.opened_on, deposit.matures_on
+                max_principal = deposit.principal.amount
+            else:
+                raise ValueError("Holding not found")
+            if not start <= payment.due_on <= end:
+                raise ValueError("Payment outside holding contract dates")
+            siblings = [p for p in self.list_payments(payment.holding_id) if p.id != payment.id]
+            if payment.kind == PaymentKind.PRINCIPAL:
+                total = payment.expected.amount + sum(
+                    (p.expected.amount for p in siblings if p.kind == PaymentKind.PRINCIPAL),
+                    Decimal("0"),
+                )
+                if total > max_principal:
+                    raise ValueError("Scheduled principal exceeds holding principal")
+            payment_balance(payment, self.list_receipts(payment.id), date.max)
+            self._db.execute(
+                """UPDATE scheduled_payments SET kind=?, due_on=?, expected_amount=?
+                   WHERE id=?""",
+                (
+                    payment.kind.value,
+                    payment.due_on.isoformat(),
+                    _value(payment.expected),
+                    payment.id,
+                ),
+            )
+
+    def update_receipt(self, receipt: ActualReceipt) -> None:
+        with self._db:
+            original = self._db.execute(
+                "SELECT payment_id FROM actual_receipts WHERE id=?", (receipt.id,)
+            ).fetchone()
+            if original is None:
+                raise ValueError("Receipt not found")
+            if receipt.payment_id != original["payment_id"]:
+                raise ValueError("Cannot move receipt to another payment")
+            linked = self._db.execute(
+                "SELECT 1 FROM cash_events WHERE receipt_id=?", (receipt.id,)
+            ).fetchone()
+            if linked:
+                raise ValueError("Already credited to cash: correction needed, not editing receipt")
+            payment = self.get_payment(receipt.payment_id)
+            others = [r for r in self.list_receipts(payment.id) if r.id != receipt.id]
+            payment_balance(payment, (*others, receipt), date.max)
+            self._db.execute(
+                "UPDATE actual_receipts SET received_on=?, amount=? WHERE id=?",
+                (receipt.received_on.isoformat(), _value(receipt.amount), receipt.id),
+            )
+
     def add_bond_lot(self, lot: BondLot) -> None:
         instrument = lot.instrument
         with self._db:
@@ -235,6 +356,11 @@ class SQLiteBankRepository:
             None if row["paid_fees"] is None else _money(row["paid_fees"], row["currency"]),
         )
 
+    def list_bond_lots(self) -> tuple[BondLot, ...]:
+        """All bond lots; returns domain values, never SQLite floating point."""
+        rows = self._db.execute("SELECT id FROM bond_lots ORDER BY id").fetchall()
+        return tuple(self.get_bond_lot(row["id"]) for row in rows)
+
     def add_deposit(self, deposit: Deposit) -> None:
         with self._db:
             self._db.execute(
@@ -272,6 +398,11 @@ class SQLiteBankRepository:
             date.fromisoformat(row["matures_on"]),
             None if row["annual_rate"] is None else Decimal(row["annual_rate"]),
         )
+
+    def list_deposits(self) -> tuple[Deposit, ...]:
+        """All deposit contracts, independently from scheduled cash events."""
+        rows = self._db.execute("SELECT id FROM deposits ORDER BY id").fetchall()
+        return tuple(self.get_deposit(row["id"]) for row in rows)
 
     def add_payment(self, payment: ScheduledPayment) -> None:
         """Persist an already-expanded lot/deposit amount; never multiply twice."""
