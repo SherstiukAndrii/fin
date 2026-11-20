@@ -1,6 +1,7 @@
 """Fin command-line entry point: scaffold checks and local SQLite management."""
 
 import argparse
+import os
 import sqlite3
 from collections.abc import Sequence
 from contextlib import closing
@@ -9,7 +10,15 @@ from pathlib import Path
 
 from fin.persistence import SCHEMA_VERSION, SQLiteBankRepository
 
-_DEFAULT_DB = Path("data/fin.sqlite3")
+
+def _default_db() -> Path:
+    """Keep real finance data outside Git and git clean -fdx."""
+    if explicit := os.environ.get("FIN_DB_PATH"):
+        return Path(explicit).expanduser()
+    root = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    return root / "fin" / "fin.sqlite3"
+
+
 _REQUIRED_TABLES = frozenset(
     {
         "bond_instruments",
@@ -31,6 +40,13 @@ def _db_init(path: Path) -> int:
     path = path.expanduser().resolve()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
+        legacy = Path("data/fin.sqlite3").resolve()
+        if path == _default_db().expanduser().resolve() and not path.exists() and legacy.is_file():
+            # Copy safely, including active WAL. Leave the legacy source untouched.
+            with closing(sqlite3.connect(legacy)) as old:
+                with closing(sqlite3.connect(path)) as copied:
+                    old.backup(copied)
+            print(f"Copied legacy database to protected location: {path}")
         with SQLiteBankRepository(path) as repository:
             schema_version = repository.schema_version()
     except (OSError, sqlite3.Error, RuntimeError) as exc:
@@ -94,16 +110,64 @@ def main(argv: Sequence[str] | None = None) -> int:
         command.add_argument(
             "--path",
             type=Path,
-            default=_DEFAULT_DB,
+            default=_default_db(),
             metavar="FILE",
-            help="SQLite file (default: data/fin.sqlite3, relative to the working directory)",
+            help="SQLite file (default: ~/.local/share/fin/fin.sqlite3)",
         )
 
+    browser = commands.add_parser("web", help="Run the local-only Bank browser UI")
+    browser.add_argument(
+        "--path",
+        type=Path,
+        default=_default_db(),
+        metavar="FILE",
+        help="Existing SQLite file (default: ~/.local/share/fin/fin.sqlite3)",
+    )
+    browser.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        metavar="PORT",
+        help="Local HTTP port (default: 8765)",
+    )
+
+    babki = commands.add_parser("babki", help="Import local Babki workbook")
+    babki_actions = babki.add_subparsers(dest="babki_action", required=True)
+    babki_import = babki_actions.add_parser("import", help="Stage Babki.xlsx for Bank")
+    babki_import.add_argument("file", type=Path, help="Local path to Babki.xlsx")
+    babki_import.add_argument("--path", type=Path, default=_default_db())
+
     args = parser.parse_args(argv)
+    if args.command == "babki":
+        if _db_status(args.path) != 0:
+            print("Run 'fin db init' first.")
+            return 1
+        from fin.importers.babki import import_babki
+
+        try:
+            with SQLiteBankRepository(args.path) as repository:
+                count = import_babki(args.file, repository._db)
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            print(f"Babki import failed: {exc}")
+            return 1
+        print(f"Babki rows staged: {count}; open Bank → Babki import (not booked cash)")
+        return 0
+
+    if args.command == "web":
+        if not 1024 <= args.port <= 65535:
+            parser.error("Port must be between 1024 and 65535")
+        if _db_status(args.path) != 0:
+            print("Run 'fin db init' first to initialize or migrate this database.")
+            return 1
+        from fin.web.server import run_local
+
+        run_local(args.path, port=args.port)
+        return 0
+
     if args.command == "db":
         if args.db_command == "init":
             return _db_init(args.path)
         return _db_status(args.path)
 
-    print("Fin scaffold is installed. Bank and Overview are not implemented yet.")
+    print("Fin scaffold installed. Overview not implemented yet; run 'fin web' for Bank.")
     return 0

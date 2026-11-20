@@ -3,12 +3,14 @@
 import sqlite3
 
 from fin.cli import main
-from fin.persistence import SCHEMA_VERSION
+from fin.domain.accounts import AccountKind, CashAccount
+from fin.persistence import SCHEMA_VERSION, SQLiteCashRepository
 
 
 def test_default_db_init_and_status(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
-    path = tmp_path / "data" / "fin.sqlite3"
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "external"))
+    path = tmp_path / "external" / "fin" / "fin.sqlite3"
     assert main(["db", "init"]) == 0
     assert path.is_file()
     init_output = capsys.readouterr().out
@@ -86,3 +88,24 @@ def test_status_detects_foreign_key_violations(tmp_path, capsys) -> None:
         )
     assert main(["db", "status", "--path", str(path)]) == 1
     assert "integrity check failed" in capsys.readouterr().out
+
+
+def test_existing_legacy_database_is_copied_outside_repo(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "external"))
+    old_path = tmp_path / "data" / "fin.sqlite3"
+    old_path.parent.mkdir()
+    with SQLiteCashRepository(old_path) as repository:
+        repository.add_account(CashAccount("bank1", "Old bank", "UAH", AccountKind.BANK))
+
+    assert main(["db", "init"]) == 0
+    new_path = tmp_path / "external" / "fin" / "fin.sqlite3"
+    assert old_path.is_file()
+    assert new_path.is_file()
+    with SQLiteCashRepository(new_path) as repository:
+        assert repository.get_account("bank1").name == "Old bank"
+
+    old_path.unlink()
+    assert main(["db", "status"]) == 0
+    with SQLiteCashRepository(new_path) as repository:
+        assert repository.get_account("bank1").name == "Old bank"

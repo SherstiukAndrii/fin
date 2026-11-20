@@ -36,6 +36,71 @@ class SQLiteCashRepository(SQLiteBankRepository):
     def __init__(self, path: str | Path) -> None:
         super().__init__(path)
 
+    def update_account(self, account: CashAccount) -> None:
+        """Display name / kind may change; account ID/currency cannot."""
+        with self._db:
+            old = self.get_account(account.id)
+            if old is None:
+                raise ValueError("Account not found")
+            if old.currency != account.currency:
+                raise ValueError("Account currency cannot change")
+            self._db.execute(
+                "UPDATE cash_accounts SET name=?, kind=? WHERE id=?",
+                (account.name, account.kind.value, account.id),
+            )
+
+    def update_opening_snapshot(self, snapshot: OpeningSnapshot) -> None:
+        """Debug correction of the single opening snapshot, with strict cut-off."""
+        with self._db:
+            old = self.get_opening_snapshot()
+            if old is None:
+                raise ValueError("Opening snapshot not found")
+            if self._db.execute(
+                "SELECT 1 FROM cash_events WHERE effective_on <= ? LIMIT 1",
+                (snapshot.as_of.isoformat(),),
+            ).fetchone():
+                raise ValueError("Opening date overlaps existing cash events")
+            actual_balances(self.list_accounts(), snapshot, (), as_of=snapshot.as_of)
+            self._db.execute(
+                "UPDATE opening_snapshot SET as_of=? WHERE id=1",
+                (snapshot.as_of.isoformat(),),
+            )
+            self._db.execute("DELETE FROM opening_balances")
+            for item in snapshot.balances:
+                self._db.execute(
+                    """INSERT INTO opening_balances (account_id, amount, currency)
+                       VALUES (?, ?, ?)""",
+                    (item.account_id, str(item.amount.amount), item.amount.currency),
+                )
+
+    def update_cash_event(self, event: CashEvent) -> None:
+        with self._db:
+            existing = next((item for item in self.list_cash_events() if item.id == event.id), None)
+            if existing is None:
+                raise ValueError("Cash event not found")
+            if existing.receipt_id is not None or event.receipt_id is not None:
+                raise ValueError("Credited investment receipts cannot be edited here")
+            opening = self.get_opening_snapshot()
+            if opening is None or event.effective_on <= opening.as_of:
+                raise ValueError("Cash event date must follow the opening snapshot")
+            for leg in event.legs:
+                account = self.get_account(leg.account_id)
+                if account is None:
+                    raise ValueError("Unknown cash account")
+                if leg.change.currency != account.currency:
+                    raise CurrencyMismatchError("Cash event currency must match the account")
+            self._db.execute(
+                """UPDATE cash_events SET effective_on=?, kind=?, note=? WHERE id=?""",
+                (event.effective_on.isoformat(), event.kind.value, event.note, event.id),
+            )
+            self._db.execute("DELETE FROM cash_legs WHERE event_id=?", (event.id,))
+            for leg in event.legs:
+                self._db.execute(
+                    """INSERT INTO cash_legs (event_id, account_id, amount, currency)
+                       VALUES (?, ?, ?, ?)""",
+                    (event.id, leg.account_id, str(leg.change.amount), leg.change.currency),
+                )
+
     def add_account(self, account: CashAccount) -> None:
         with self._db:
             if self._db.execute("SELECT 1 FROM opening_snapshot").fetchone() is not None:

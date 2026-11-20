@@ -52,7 +52,7 @@
           "panel": "dedicated",
           "clear": true
         },
-        "detail": "Create/migrate local data/fin.sqlite3 (idempotent)"
+        "detail": "Create/migrate ~/.local/share/fin/fin.sqlite3 (outside Git); copy old data/ database when needed"
       },
       {
         "label": "Fin: DB Status",
@@ -73,7 +73,27 @@
           "panel": "dedicated",
           "clear": true
         },
-        "detail": "Read-only status and integrity check for data/fin.sqlite3"
+        "detail": "Read-only health check for database outside repository"
+      },
+      {
+        "label": "Fin: Web",
+        "type": "shell",
+        "command": "${workspaceFolder}/.venv/bin/python",
+        "args": [
+          "-m",
+          "fin",
+          "web"
+        ],
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated",
+          "clear": true
+        },
+        "detail": "Run local Bank browser UI at http://127.0.0.1:8765 (requires Fin: DB Init)"
       },
       {
         "label": "Fin: Tests",
@@ -165,13 +185,12 @@
           "panel": "dedicated",
           "clear": true
         },
-        "command": "python3",
+        "command": "bash",
         "args": [
-          "-m",
-          "venv",
-          ".venv"
+          "-lc",
+          "if [ ! -x .venv/bin/python ]; then python3 -m venv .venv; fi; .venv/bin/python -m pip --version"
         ],
-        "detail": "Create .venv (first run), then use Fin: Install to install the dev dependencies"
+        "detail": "Idempotent WSL environment setup; do not recreate existing .venv"
       },
       {
         "label": "Fin: Install",
@@ -196,7 +215,11 @@
             "quoting": "strong"
           }
         ],
-        "detail": "Install Fin and dev dependencies into the local environment"
+        "detail": "Create .venv when missing, then install/update editable Fin and dev dependencies",
+        "dependsOn": [
+          "Fin: Setup"
+        ],
+        "dependsOrder": "sequence"
       },
       {
         "label": "Fin: Check",
@@ -212,6 +235,46 @@
         },
         "problemMatcher": [],
         "detail": "Run lint, format check, and tests before a PR"
+      },
+      {
+        "label": "Fin: Bootstrap",
+        "dependsOn": [
+          "Fin: Install",
+          "Fin: DB Init"
+        ],
+        "dependsOrder": "sequence",
+        "problemMatcher": [],
+        "detail": "First-run setup, install, and safe SQLite initialization"
+      },
+      {
+        "label": "Fin: Babki Import",
+        "type": "shell",
+        "command": "${workspaceFolder}/.venv/bin/python",
+        "args": [
+          "-m",
+          "fin",
+          "babki",
+          "import",
+          "${input:babkiFile}"
+        ],
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated",
+          "clear": true
+        },
+        "detail": "Stage Babki.xlsx rows into the visible Bank import preview, no financial booking"
+      }
+    ],
+    "inputs": [
+      {
+        "id": "babkiFile",
+        "type": "promptString",
+        "description": "Absolute WSL path to downloaded Babki.xlsx",
+        "default": "~/Downloads/Babki.xlsx"
       }
     ]
   }
