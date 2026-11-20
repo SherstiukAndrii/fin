@@ -351,7 +351,9 @@ def test_generated_ids_without_manual_input(bank_ui):
         assert account.id.startswith("account_")
         assert account.kind == AccountKind.CASH
     page = client.get("/bank")
-    assert "ID" not in page.text.split("Добавить счёт")[0]
+    # A generated CSRF token may contain "ID"; inspect only the account form.
+    account_form = page.text.split('action="/bank/account">', 1)[1].split("</form>", 1)[0]
+    assert 'name="id"' not in account_form
 
 
 def test_javascript_asset_is_available_and_csp_allows_self(bank_ui):

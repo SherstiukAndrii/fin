@@ -132,7 +132,10 @@ def test_invalid_deposit_restores_entered_data_and_opens_deposit_form(browser):
     for name, value in fields.items():
         if name == "id":
             continue
-        input_value(response, name, value)
+        if name == "bank":
+            assert '<option value="Test bank" selected>' in response.text
+        else:
+            input_value(response, name, value)
     with SQLiteCashRepository(path) as db:
         assert db.list_deposits() == ()
 

@@ -245,36 +245,6 @@
         "dependsOrder": "sequence",
         "problemMatcher": [],
         "detail": "First-run setup, install, and safe SQLite initialization"
-      },
-      {
-        "label": "Fin: Babki Import",
-        "type": "shell",
-        "command": "${workspaceFolder}/.venv/bin/python",
-        "args": [
-          "-m",
-          "fin",
-          "babki",
-          "import",
-          "${input:babkiFile}"
-        ],
-        "options": {
-          "cwd": "${workspaceFolder}"
-        },
-        "problemMatcher": [],
-        "presentation": {
-          "reveal": "always",
-          "panel": "dedicated",
-          "clear": true
-        },
-        "detail": "Stage Babki.xlsx rows into the visible Bank import preview, no financial booking"
-      }
-    ],
-    "inputs": [
-      {
-        "id": "babkiFile",
-        "type": "promptString",
-        "description": "Absolute WSL path to downloaded Babki.xlsx",
-        "default": "~/Downloads/Babki.xlsx"
       }
     ]
   }

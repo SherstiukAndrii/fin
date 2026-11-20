@@ -2,7 +2,7 @@
 
 Single-user, offline-first personal finance app for Windows and Linux. The planned MVP contains **Bank** and **Overview**; see [MVP requirements](docs/mvp.md) and the [domain model](docs/domain-model.md).
 
-**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank/Cash persistence v2**. Actual cash ledger and dated opening snapshot are available in Python. First local Bank browser UI is available; Overview/FX still to come. Future investment calculators and statement analysis are documented under `docs/`.
+**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank/Cash persistence v3**. Actual cash ledger and dated opening snapshot are available in Python. First local Bank browser UI is available; Overview/FX still to come. Future investment calculators and statement analysis are documented under `docs/`.
 
 ## Development with Windows + WSL (Ubuntu) + VS Code
 
@@ -38,7 +38,7 @@ The installed `fin` command is equivalent to `python -m fin`. Without subcommand
    - **Fin: Ruff Format Check** — run `ruff format --check .` (non-mutating format verification).
    - **Fin: Ruff Format** — run `ruff format .` to format files.
    - **Fin: Check** — run lint, format check, and tests sequentially; also the default **Run Build Task** (`Ctrl+Shift+B`).
-   - **Fin: Setup** — idempotent WSL venv setup; **Fin: Install** — run Setup and install/update `.[dev]`; **Fin: Bootstrap** — Install + DB Init; **Fin: Babki Import** — prompt for the XLSX path.
+   - **Fin: Setup** — idempotent WSL venv setup; **Fin: Install** — run Setup and install/update `.[dev]`; **Fin: Bootstrap** — Install + DB Init.
 4. Read results in the integrated terminal. **Fin: Check** should pass before opening or merging a PR.
 
 All shared VS Code project settings and tasks live in **`fin.code-workspace`** (not `.vscode/tasks.json`). Open that workspace in WSL. Task commands use `.venv/bin/python` and `.venv/bin/ruff` explicitly, so shell activation is unnecessary. If those executables are missing, first run **Fin: Setup**, then **Fin: Install**.
@@ -101,7 +101,7 @@ Run **Fin: Check** in `fin.code-workspace` before review. SQLite storage, accoun
 
 ## SQLite Bank persistence
 
-`fin.persistence.SQLiteBankRepository` saves bond instruments/lots, deposits, explicit scheduled payments and confirmed receipts in a local SQLite file. It creates **schema version 2** on first open, preserves data when reopened, rejects unsupported future versions and enables foreign keys on every connection. `Decimal` amounts are stored as **TEXT**, not floating-point SQLite REAL. Unknown purchase prices/fees stay `NULL`, not zero.
+`fin.persistence.SQLiteBankRepository` saves bond instruments/lots, deposits, explicit scheduled payments and confirmed receipts in a local SQLite file. It creates **schema version 3** on first open, preserves data when reopened, rejects unsupported future versions and enables foreign keys on every connection. `Decimal` amounts are stored as **TEXT**, not floating-point SQLite REAL. Unknown purchase prices/fees stay `NULL`, not zero.
 
 ```python
 from pathlib import Path
@@ -110,7 +110,7 @@ from fin.persistence import SQLiteBankRepository
 
 Path("data").mkdir(exist_ok=True)
 with SQLiteBankRepository(Path.home() / ".local/share/fin/fin.sqlite3") as repository:
-    assert repository.schema_version() == 1
+    assert repository.schema_version() == 3
     # repository.add_bond_lot(lot)
     # repository.add_payment(scheduled_payment)
     # repository.add_receipt(actual_receipt)
@@ -190,7 +190,7 @@ Bank currently supports creating accounts **before** an immutable dated opening 
 No market prices, FX conversion, net-worth Total, monthly control snapshot or backup workflow yet. The UI uses the existing SQLite file; no real account data is stored in Git or tests. Make a backup before entering real data. `git clean -fdx` can delete local private files, even if they are ignored by Git.
 
 
-## Bank UI updates: editing, Babki and safe storage
+## Bank UI updates: editing and safe storage
 
 After updating to this PR, use **Fin: Bootstrap** in `fin.code-workspace` once,
 then **Fin: Web**. Separate **Fin: Setup** is idempotent: it keeps an existing
@@ -208,20 +208,45 @@ means interest from bonds, while an actual receipt is a confirmed bank credit.
 Browser form submission is asynchronous, with inline error messages; JavaScript
 prevents page jumps while preserving typed values.
 
-### Babki XLSX import
+Deposit bank selection is a **dropdown of existing bank-account names**, with
+**Другой банк** for institutions not represented by a cash account. Selection
+stores the bank's display name on the deposit; it does **not** transfer cash
+or link investment principal automatically. Monetary input fields and bond
+quantities show grouped digits as you type (e.g. `1 234 567.89`). The backend
+accepts the grouped value and saves the exact Decimal without rounding.
+Editing forms use the same formatting. New opening snapshots, cash movements,
+bond purchases, deposit openings and actual receipts default their dates to
+the current local day; contractual maturity and planned-payment dates must
+be entered explicitly.
 
-Download your **private** Babki workbook to your WSL computer, outside the Git
-checkout. After `Fin: DB Init` / `Fin: Bootstrap` run:
+**One-step investment entry:** In the **Add bond / Add deposit** form,
+optionally list as many expected payment rows as needed (date, coupon /
+interest / principal, amount for the entire bond lot or entire deposit).
+Click **+ Добавить выплату** for additional rows. Saving creates the
+investment and all explicit scheduled payments in one SQLite transaction:
+an invalid date, mismatched payment type, or excess scheduled principal
+rolls back the whole entry. Empty optional rows are skipped. No coupons,
+dates, or maturity amounts are automatically guessed from a rate; missing
+payment terms can be added later from the separate payment form. Planned
+payments never debit or credit the actual cash ledger.
 
-```bash
-.venv/bin/python -m fin babki import ~/Downloads/Babki.xlsx
-```
+**Automatic maturity principal:** the combined bond/deposit form always creates the
+final **scheduled principal** using the stated maturity date and contractual
+principal (`bond face value × quantity` or `deposit principal`). Do not enter
+principal twice. Existing positions are *not* backfilled with invented payments
+during the atomic SQLite v2→v3 migration. Editing an auto-generated principal
+directly is blocked; for deposits, editing maturity/principal adjusts it
+automatically unless an actual receipt has already been recorded.
 
-Or use **Fin: Babki Import** in `fin.code-workspace` and enter its actual WSL
-file path. The imported rows now appear under **Bank → Импортировано из Babki**.
-This is **staging, not a financial ledger posting**: ISINs, bond face values,
-full coupon schedules and the opening balance date are not confirmed by the
-spreadsheet. Do not count the same purchase or balance twice.
+**Custody provider per OVGZ lot:** the bond form selects an existing bank or a
+custom bank/broker/depository (e.g. Freedom24); different lots of the same ISIN
+can have different custody institutions. Old bonds migrate with custody
+**unspecified**; neither holdings nor cash are reassigned.
+
+**Actual vs planned amounts:** actual receipts can be smaller, larger or split
+over multiple dates. The Bank calendar displays any overpayment explicitly
+(`Сверх плана`) without changing the original planned amount. Actual cash
+is still credited only by a separately linked confirmed receipt event.
 
 ### Data protection / git clean
 
@@ -231,9 +256,8 @@ override), **outside this Git checkout**. Running `Fin: DB Init` copies an
 existing legacy `data/fin.sqlite3` to the new path with SQLite's online backup,
 without deleting or overwriting the legacy file. It initializes a new database
 only when no existing database is found. `git clean -fdx` can still delete
-untracked files inside the repository (especially `data/Babki_import.sql`,
-`data/fin.sqlite3` and `.venv`), so do not keep your only copy there.
+untracked files inside the repository (including `data/fin.sqlite3` and
+`.venv`), so do not keep your only copy there.
 
-Import directly from `Babki.xlsx` instead of temporary SQL. Repeated import
-of identical file bytes is idempotent; use the Bank staging view to review it.
-The import does not overwrite accounts, existing OVGZ lots, or cash.
+Old staging tables in existing SQLite databases are left untouched by this
+cleanup. No financial records or user databases are deleted.
