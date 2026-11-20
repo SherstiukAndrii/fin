@@ -30,6 +30,8 @@ All product choices **Q01–Q16 are approved**. Details labeled *implementation 
 
 SQLite stores local data and supports backup/restore. Records use stable IDs, explicit dates and provenance. Automatic price feeds and imports are future adapters and do not change calculation semantics.
 
+**Investment calculator boundary:** shared Money/Decimal, currency, dated CashFlow, Instrument, Position/Lot and valuation data must be reusable by a separate `CalculatorService`. Reserve strategy-style engines for bond/OVGZ, equity/ETF, deposit and generic cash-flow scenarios, plus provider-neutral ports for instrument metadata, payment schedules, quotes, FX and corporate actions. A future NBU OVGZ schedule adapter may populate the instrument's dated coupons/principal events, but must not overwrite actual receipts or historical purchase prices. Scenario results are never automatically posted to the ledger. See [Investment Calculators design](investment-calculators.md).
+
 **Future extension boundary — bank statements.** Core ledger, account snapshots, holdings and real settlement events must remain independent of bank export formats. A later Statement Analysis module introduces its own import batch, normalized bank transaction, category, statement-to-ledger match, analytical rule and explainable finding. These are **read-only analytical/staging records**, never automatically authoritative transactions. Matching a bank transfer, refund, bond coupon or deposit interest must prevent double booking. The core can expose stable Account/Event/Payment IDs and read-only repositories so statement adapters attach later without changes to Free, Fire or Total formulas. See [Statement Analysis design](statement-analysis.md).
 
 ## 2. Opening state, accounting and reconciliation
