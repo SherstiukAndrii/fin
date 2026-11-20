@@ -110,13 +110,13 @@ def test_version_two_migration_preserves_manual_lot_schedule_and_receipt(tmp_pat
                VALUES ('old-receipt', 'old-coupon', '2027-05-21', '80', 'UAH')"""
         )
     with SQLiteCashRepository(path) as db:
-        assert db.schema_version() == SCHEMA_VERSION == 3
+        assert db.schema_version() == SCHEMA_VERSION == 4
         assert db.get_bond_lot("old-lot").custodian is None
         assert len(db.list_payments("old-lot")) == 1
         assert db.list_receipts("old-coupon")[0].amount == amount("80")
         assert not db.is_auto_principal("old-coupon")
     with SQLiteCashRepository(path) as db:
-        assert db.schema_version() == 3
+        assert db.schema_version() == 4
         assert len(db.list_payments("old-lot")) == 1
     with sqlite3.connect(path) as connection:
         assert connection.execute("PRAGMA quick_check").fetchone()[0] == "ok"

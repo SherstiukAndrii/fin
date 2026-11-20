@@ -161,6 +161,73 @@
       {% endif %}
     </section>
 
+    <section class="card" id="monthly-controls">
+      <h2>Ежемесячная сверка остатков</h2>
+      <p class="small">Контрольный снимок хранит увиденные на конец месяца остатки всех счетов.
+        Снимок <strong>не изменяет</strong> деньги автоматически. Корректировка проводится отдельно
+        и требует причины. Сравнение выполняется по каждому счёту в его валюте.</p>
+      {% if opening %}
+      <details id="form-control" {% if failed_form == 'control' %}open{% endif %}>
+        <summary>Зафиксировать остатки за месяц</summary>
+        <form method="post" action="/bank/control?as_of={{ as_of.isoformat() }}">{{ token() }}
+          <div class="grid">
+            <label>Конец месяца<input type="date" name="as_of" value="{{ prior('control','as_of',control_default) }}" required></label>
+            {% for a in accounts %}
+            <label>Фактически на {{ a.name }} ({{ a.currency }})
+              <input name="balance_{{ a.id }}" value="{{ prior('control','balance_' ~ a.id) }}"
+                     required data-grouped inputmode="decimal" placeholder="0"></label>
+            {% endfor %}
+            <label>Пояснение (необязательно)<input name="note" value="{{ prior('control','note') }}"></label>
+          </div>
+          <button>Сохранить снимок без проводок</button>
+          <p class="small">Дата — последний календарный день месяца после начального снимка.
+             Укажи все счета, включая нулевые; прошлые снимки и отличия не перезаписываются.</p>
+        </form>
+      </details>
+      {% if controls %}
+      {% for control in controls %}
+      <h3>Контроль на {{ control.as_of }}{% if control.note %} · {{ control.note }}{% endif %}</h3>
+      <div class="scroll"><table><thead><tr><th>Счёт</th><th>Факт</th><th>Расчёт при записи</th>
+        <th>Расчёт сейчас</th><th>Разница сейчас</th><th>Сверка</th></tr></thead><tbody>
+        {% for row in control.rows %}
+        <tr>
+          <td>{{ row.account.name }} ({{ row.account.currency }})</td>
+          <td class="num">{{ row.observed.amount|amount }}</td>
+          <td class="num">{{ row.calculated_at_capture.amount|amount }}</td>
+          <td class="num">{{ row.current_calculated.amount|amount }}</td>
+          <td class="num">{{ row.difference.amount|amount }}</td>
+          <td>
+            {% if row.correction_event_id %}
+              <strong>Корректировка подтверждена</strong>
+              {% if row.difference.amount != 0 %}<p class="small">После корректировки расчёт снова изменился. Проверь историю операций.</p>{% endif %}
+            {% elif row.difference.amount == 0 %}
+              <span class="muted">Совпало — проводка не нужна</span>
+            {% else %}
+              <details><summary>Подтвердить корректировку</summary>
+                <form method="post" action="/bank/confirm_control?as_of={{ as_of.isoformat() }}">{{ token() }}
+                  <input type="hidden" name="control_id" value="{{ control.id }}">
+                  <input type="hidden" name="account_id" value="{{ row.account.id }}">
+                  <input type="hidden" name="expected_difference" value="{{ row.difference.amount }}">
+                  <p class="small">Будет создана отдельная операция на
+                    {{ row.difference.amount|amount }} {{ row.account.currency }} датой {{ control.as_of }}.
+                    Эта операция изменит реальные остатки с указанного дня.</p>
+                  <label>Причина расхождения<input name="reason" required placeholder="Например, неучтённая комиссия"></label>
+                  <button class="mini">Подтвердить и провести</button>
+                </form>
+              </details>
+            {% endif %}
+          </td>
+        </tr>{% endfor %}
+      </tbody></table></div>
+      {% endfor %}
+      {% else %}
+      <p class="small">Контрольных месячных снимков пока нет.</p>
+      {% endif %}
+      {% else %}
+      <p class="small">Сначала укажи счета и начальные остатки.</p>
+      {% endif %}
+    </section>
+
     <section class="card" id="holdings">
       <h2>Вложения <span class="pill">{{ holdings|length }}</span></h2>
       {% if holdings %}

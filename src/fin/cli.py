@@ -32,6 +32,8 @@ _REQUIRED_TABLES = frozenset(
         "opening_balances",
         "cash_events",
         "cash_legs",
+        "monthly_controls",
+        "monthly_control_balances",
     }
 )
 
