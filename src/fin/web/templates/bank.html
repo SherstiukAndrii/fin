@@ -128,6 +128,39 @@
       {% endif %}
     </section>
 
+    <section class="card" id="cash-outlook">
+      <h2>Деньги и ожидаемые выплаты к {{ as_of }}</h2>
+      {% if outlook is not none %}
+      {% if outlook %}
+      <div class="scroll"><table><thead><tr>
+        <th>Валюта</th><th>Реально на счетах</th><th>Получено, не зачислено</th>
+        <th>Ожидаемый доход к дате</th><th>Возврат тела к дате</th><th>Потенциально</th>
+      </tr></thead><tbody>
+        {% for row in outlook %}<tr>
+          <td><strong>{{ row.currency }}</strong></td>
+          <td class="num">{{ row.actual_cash.amount|amount }}</td>
+          <td class="num">{{ row.uncredited.amount|amount }}</td>
+          <td class="num">{{ row.expected_income.amount|amount }}</td>
+          <td class="num">{{ row.expected_principal.amount|amount }}</td>
+          <td class="num"><strong>{{ row.potential_cash.amount|amount }}</strong></td>
+        </tr>{% endfor %}
+      </tbody></table></div>
+      {% else %}<p class="small">Нет счетов или выплат для расчёта.</p>{% endif %}
+      <p class="small"><strong>Реально на счетах</strong> — только начальные остатки и отдельно подтверждённые денежные операции.
+      <strong>Не зачислено</strong> — записанный факт без операции зачисления.
+      <strong>Ожидаемый доход</strong> — неполученные купоны и проценты, срок которых наступил к выбранной дате.
+      <strong>Возврат тела</strong> — неполученный номинал ОВГЗ/депозита с датой погашения до выбранного дня; это не прибыль.</p>
+      <p class="small"><strong>Потенциально</strong> = реально + не зачислено + ожидаемый доход + возврат тела.
+      Это сценарий при поступлении всех причитающихся выплат (включая просроченные), а не гарантированно доступные деньги.
+      Выплаты до даты начального снимка не прибавляются повторно; покупки, будущие расходы и валютная конвертация здесь не прогнозируются.
+      Разные валюты не складываются.</p>
+      {% elif not opening %}
+      <p class="small">Зафиксируй начальный снимок, чтобы рассчитать реальные и ожидаемые остатки.</p>
+      {% else %}
+      <p class="small">Выбранная дата раньше начального снимка — расчёт недоступен.</p>
+      {% endif %}
+    </section>
+
     <section class="card" id="holdings">
       <h2>Вложения <span class="pill">{{ holdings|length }}</span></h2>
       {% if holdings %}
