@@ -305,7 +305,7 @@
           <details><summary>Записать факт</summary>
             <form method="post" action="/bank/receipt">{{ token() }}
               <input type="hidden" name="payment_id" value="{{ p.id }}">
-              <label>Дата поступления<input type="date" name="received_on" value="{{ today.isoformat() }}" required></label>
+              <label>Дата поступления<input type="date" name="received_on" value="{{ p.due.isoformat() }}" required></label>
               <label>Фактически получено<input name="amount" value="{{ p.outstanding.amount if p.outstanding.amount > 0 else '' }}" required data-grouped inputmode="decimal"></label>
               <button class="mini">Записать поступление</button>
               <p class="small">Сумма редактируется независимо от плана. Зачисление на счёт выполняется отдельно.</p>
