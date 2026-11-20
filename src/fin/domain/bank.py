@@ -276,7 +276,9 @@ def payment_balance(
         _currency(receipt.amount, payment.expected.currency)
         if receipt.received_on <= as_of:
             received += receipt.amount
-    outstanding = Money(max(Decimal("0"), payment.expected.amount - received.amount), payment.expected.currency)
+    outstanding = Money(
+        max(Decimal("0"), payment.expected.amount - received.amount), payment.expected.currency
+    )
     if received.amount >= payment.expected.amount:
         status = PaymentStatus.PAID
     elif as_of > payment.due_on:
