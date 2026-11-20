@@ -193,11 +193,13 @@ def test_duplicate_actual_receipt_id_is_rejected() -> None:
         payment_balance(payment, [receipt, receipt], date(2027, 3, 1))
 
 
-def test_excess_receipts_require_reconciliation() -> None:
+def test_excess_receipts_are_recorded_as_actual() -> None:
     payment = bond_schedule(bond(), coupon_terms())[0]
     receipt = ActualReceipt("extra", payment.id, date(2027, 3, 2), uah("81"))
-    with pytest.raises(ValueError, match="exceed"):
-        payment_balance(payment, [receipt], date(2027, 3, 2))
+    balance = payment_balance(payment, [receipt], date(2027, 3, 2))
+    assert balance.received == uah("81")
+    assert balance.outstanding == uah("0")
+    assert balance.status == PaymentStatus.PAID
 
 
 def test_receipt_cannot_settle_another_obligation() -> None:
