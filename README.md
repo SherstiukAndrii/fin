@@ -2,7 +2,7 @@
 
 Single-user, offline-first personal finance app for Windows and Linux. The planned MVP contains **Bank** and **Overview**; see [MVP requirements](docs/mvp.md) and the [domain model](docs/domain-model.md).
 
-**Current state:** Python package scaffold and a tested `Money` value object. No real account balances, FX engine, database or web UI yet. Future investment calculators and statement analysis are documented under `docs/`.
+**Current state:** Python scaffold, exact `Money`, and tested Bank domain records for bonds, deposits and planned/actual payments. No live balance ledger, FX engine, database or web UI yet. Future investment calculators and statement analysis are documented under `docs/`.
 
 ## Development with Windows + WSL (Ubuntu) + VS Code
 
@@ -82,3 +82,16 @@ because a bank account commonly displays two decimals.
 
 This PR is limited to the shared Money primitive. FX, valuations, coupons,
 taxes, database persistence and actual transaction posting are later work.
+
+## Bank domain: scheduled versus actual payments
+
+The pure, offline `fin.domain.bank` module introduces:
+
+- `BondInstrument` and `BondLot`: one ISIN with lots, quantities, unit purchase cost and fees. Unknown price/fees remain `None` (unknown cost basis), never silently zero.
+- `Deposit`: principal, dates and optional contractual annual rate (a decimal fraction).
+- `BondPaymentTerm` (`amount_per_bond`) and `DepositPaymentTerm` (`amount_for_deposit`): explicitly entered contractual schedules. Convert them with `bond_schedule` / `deposit_schedule` to immutable `ScheduledPayment` records. Bond amounts multiply by lot quantity **once**; deposit amounts never do.
+- `ActualReceipt` and `payment_balance`: reconcile multiple separately dated receipts to one scheduled obligation, with expected, partial, overdue and paid states.
+
+A coupon never reduces principal, a maturity date does not imply an extra coupon, and a planned payment is **not** booked cash. Cost basis is not market value. Receipt overpayments and duplicate IDs are rejected pending a later explicit reconciliation mechanism. No automatic reinvestment, interest generation or tax calculations.
+
+Run **Fin: Check** in `fin.code-workspace` before review. SQLite storage, account movements and valuations are separate future PRs.
