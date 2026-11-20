@@ -2,7 +2,7 @@
 
 Fin is a single-user, local, offline-first financial web application. The first version has **Bank** (holdings and payment records) and **Overview** (liquidity, net worth and projections). Windows/Linux browsers are supported through a locally running application. The prototype spreadsheet *Babki* informs workflow and presentation only, not the application schema or formulas.
 
-The [domain model](domain-model.md) is normative for records, calculations and invariants. [Implementation details](open-questions.md) lists still-unresolved technical parameters. **All financial decisions Q01–Q16 have been approved**; they are not open questions.
+The [domain model](domain-model.md) is normative for records, calculations and invariants. [Implementation details](open-questions.md) lists still-unresolved technical parameters. **All financial decisions Q01–Q16 have been approved**; they are not open questions. The [future Statement Analysis architecture](statement-analysis.md) keeps bank-statement import and spending/opportunity analytics separate from the current MVP ledger.
 
 ## Bank — record positions and payments
 
@@ -43,6 +43,13 @@ The [domain model](domain-model.md) is normative for records, calculations and i
 - Use local SQLite; provide **regular local backups**, explicit manual export/restore and a tested restore/integrity path. Keep the service bound to localhost by default; remote access via the user's private VPN and authentication is a separate phase. Never put real balances or credentials in public Issues/PRs.
 - Use `Decimal` for financial calculations and retain intermediate precision. Apply rounding when a real cash flow is posted or for currency/instrument-specific display; do not store all instruments as two-decimal `float` values. Distinguish zero, unknown, missing and invalid inputs.
 - Automation of bank accounts, broker data, public pricing, cloud sync and historical CSV/XLSX import are **outside the first MVP**. The first dataset is entered as a manual snapshot.
+
+## Planned extension — bank statements and spending intelligence
+
+- Preserve the ability to import bank statements in a **future, standalone Statement Analysis module** to identify potentially unjustified expenses and missed financial opportunities. A user-initiated, read-only adapter will normalize per-transaction data (starting with CSV; other formats later), reconcile transfers, refunds, coupons and known events, and run explainable recurring-charge, duplicate-charge, fee, anomaly and opportunity rules.
+- **Do not turn the MVP into transaction-by-transaction spending accounting.** Imported rows are a separate analytical source, not automatically ledger events. The dated opening snapshot and monthly reconciliations remain authoritative, and matched transactions must never double-count balances, investment yield or expenses.
+- Findings must show evidence, estimated avoidable cost or hypothetical saving, assumptions, confidence and user dismiss/confirm feedback. Idle-cash versus deposit/OVGZ scenarios explicitly show liquidity needs, currency, taxes, fees and risk rather than promising returns. Never label an expense “unjustified” without an opportunity to review it.
+- Keep processing **local and offline by default**, read-only, with no bank credentials or raw statements sent to cloud AI, logs, tests or public repositories. Future connectors/LLMs and any automated actions require separate user consent and design. See [Statement Analysis architecture](statement-analysis.md).
 
 ## Acceptance criteria (test with invented figures)
 
