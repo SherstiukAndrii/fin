@@ -70,11 +70,11 @@ def payments(bond: BondLot) -> tuple[ScheduledPayment, ...]:
 def test_migration_idempotent_and_survives_reopen(tmp_path) -> None:
     path = tmp_path / "bank.sqlite3"
     with SQLiteBankRepository(path) as store:
-        assert store.schema_version() == SCHEMA_VERSION == 1
+        assert store.schema_version() == SCHEMA_VERSION == 2
         store.add_bond_lot(lot())
         store.add_deposit(deposit())
     with SQLiteBankRepository(path) as store:
-        assert store.schema_version() == 1
+        assert store.schema_version() == 2
         assert store.get_bond_lot("lot-1") == lot()
         assert store.get_deposit("deposit-1") == deposit()
         assert store.get_bond_lot("missing") is None

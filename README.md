@@ -2,7 +2,7 @@
 
 Single-user, offline-first personal finance app for Windows and Linux. The planned MVP contains **Bank** and **Overview**; see [MVP requirements](docs/mvp.md) and the [domain model](docs/domain-model.md).
 
-**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank persistence v1**. No live cash ledger, FX engine or web UI yet. Future investment calculators and statement analysis are documented under `docs/`.
+**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank/Cash persistence v2**. Actual cash ledger and dated opening snapshot are now available in Python; no FX engine or web UI yet. Future investment calculators and statement analysis are documented under `docs/`.
 
 ## Development with Windows + WSL (Ubuntu) + VS Code
 
@@ -100,7 +100,7 @@ Run **Fin: Check** in `fin.code-workspace` before review. SQLite storage, accoun
 
 ## SQLite Bank persistence
 
-`fin.persistence.SQLiteBankRepository` saves bond instruments/lots, deposits, explicit scheduled payments and confirmed receipts in a local SQLite file. It creates **schema version 1** on first open, preserves data when reopened, rejects unsupported future versions and enables foreign keys on every connection. `Decimal` amounts are stored as **TEXT**, not floating-point SQLite REAL. Unknown purchase prices/fees stay `NULL`, not zero.
+`fin.persistence.SQLiteBankRepository` saves bond instruments/lots, deposits, explicit scheduled payments and confirmed receipts in a local SQLite file. It creates **schema version 2** on first open, preserves data when reopened, rejects unsupported future versions and enables foreign keys on every connection. `Decimal` amounts are stored as **TEXT**, not floating-point SQLite REAL. Unknown purchase prices/fees stay `NULL`, not zero.
 
 ```python
 from pathlib import Path
@@ -134,3 +134,36 @@ Equivalent commands (run from the repository root):
 `fin db status` does **not** create the file or run migrations: it reports a missing database, unsupported version, incomplete schema or integrity problems with a nonzero exit code. The default path is relative to the current working directory; workspace tasks always use the repository root.
 
 Schema migrations run in a single transaction; each repository write is atomic. This is **storage of contracts and receipts**, not a ledger that automatically credits account balances. The opening snapshot, ledger, backup/restore and UI arrive in later PRs. Do not delete the SQLite database with `git clean -fdx` or similar cleanup commands.
+
+## Cash accounts, opening snapshot and dated movements (SQLite v2)
+
+The offline `fin.domain.accounts` module defines `CashAccount`, `OpeningSnapshot`, `CashEvent` and `actual_balances`. `fin.persistence.SQLiteCashRepository` uses the **same SQLite file** as `SQLiteBankRepository`. Existing v1 databases migrate in place to v2; bond lots, deposits and payment histories are retained.
+
+- Create all cash/bank accounts first and save one **end-of-day** opening snapshot, with an amount for every account (including confirmed zero). The initial balances already include any earlier purchases. This first iteration does not support changing the opening snapshot or adding accounts after it; those workflows require explicit later rules.
+- Post dated actual cash movements: external inflows/outflows, own-account transfers (two offsetting legs, same currency), auditable corrections (an explanation is required), and individual **confirmed receipt** events. Movements on the opening day are not replayed. Actual balances are computed from the opening state and confirmed **later** entries only.
+- A scheduled coupon/interest/principal does **not** credit cash automatically. Even an `ActualReceipt` remains separate from account cash until a `CashEvent(kind=RECEIPT)` explicitly links its `receipt_id`, matching date, amount and currency. A unique SQL constraint prevents linking a receipt twice. An unrelated manual inflow is not automatically matched to investments; do not enter the same real-world receipt as both.
+- Different account currencies are never added or converted implicitly. Cross-currency transfers, liability effects, monthly control snapshots, automated posting for sales/purchases and UI entry forms remain later work.
+
+### Example: initial snapshot and actual cash
+
+```python
+from datetime import date
+from decimal import Decimal
+
+from fin.domain.accounts import AccountKind, CashAccount, OpeningBalance, OpeningSnapshot
+from fin.domain.money import Money
+from fin.persistence import SQLiteCashRepository
+
+with SQLiteCashRepository("data/fin.sqlite3") as db:
+    db.add_account(CashAccount("wallet", "Cash", "UAH", AccountKind.CASH))
+    db.save_opening_snapshot(
+        OpeningSnapshot(
+            date(2027, 1, 1),
+            (OpeningBalance("wallet", Money(Decimal("100.00"), "UAH")),),
+        )
+    )
+    print(db.balances_on(date(2027, 1, 1)))
+```
+
+The example assumes a **new empty database** with an existing `data/` folder. For a real existing database, use its own accounts and opening snapshot, and do not run the example twice. Local financial databases and their SQLite sidecars are excluded from Git, **not** protected from filesystem deletion. Backup/restore comes later.
+

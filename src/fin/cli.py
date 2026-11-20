@@ -18,6 +18,11 @@ _REQUIRED_TABLES = frozenset(
         "deposits",
         "scheduled_payments",
         "actual_receipts",
+        "cash_accounts",
+        "opening_snapshot",
+        "opening_balances",
+        "cash_events",
+        "cash_legs",
     }
 )
 
