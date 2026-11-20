@@ -34,6 +34,7 @@ _REQUIRED_TABLES = frozenset(
         "cash_legs",
         "monthly_controls",
         "monthly_control_balances",
+        "securities_imports",
     }
 )
 

@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.datastructures import UploadFile
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from fin.domain.accounts import (
@@ -35,7 +36,9 @@ from fin.domain.bank import (
 )
 from fin.domain.cash_outlook import cash_outlook
 from fin.domain.money import Money
+from fin.domain.securities_import import parse_securities_pdf
 from fin.persistence import SQLiteCashRepository
+from fin.web.import_preview import sign_preview, verify_preview
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 _KINDS = {
@@ -426,6 +429,7 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
             {
                 *bank_names,
                 *(bond.custodian for bond in repo.list_bond_lots() if bond.custodian),
+                *(record.custodian for record in repo.list_securities_entries()),
             },
             key=str.casefold,
         )
@@ -531,6 +535,66 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
     control_default = (
         suggested.isoformat() if opening is not None and suggested > opening.as_of else ""
     )
+    imported_positions = repo.securities_positions_on(as_of)
+    confirmed_keys = {
+        (position["isin"], position["custodian"].strip().casefold())
+        for position in imported_positions
+        if position["confirmed"]
+    }
+    imported_keys = {
+        (position["isin"], position["custodian"].strip().casefold())
+        for position in imported_positions
+    }
+    manual_keys = {
+        (holding["model"].instrument.isin, holding["model"].custodian.strip().casefold())
+        for holding in holdings
+        if isinstance(holding["model"], BondLot) and holding["model"].custodian
+    }
+    investment_rows = []
+    matched_manual = []
+    for holding in holdings:
+        bond = holding["model"]
+        if isinstance(bond, BondLot) and bond.custodian:
+            key = (bond.instrument.isin, bond.custodian.strip().casefold())
+            if key in confirmed_keys:
+                matched_manual.append(holding)
+                continue
+            if key in imported_keys:
+                holding["movement_notice"] = True
+        investment_rows.append(holding)
+
+    security_nominal_totals: dict[str, Decimal] = {}
+    for position in imported_positions:
+        key = (position["isin"], position["custodian"].strip().casefold())
+        if not position["confirmed"] and key in manual_keys:
+            continue  # Movement alone cannot replace an existing manually entered lot.
+        investment_rows.append(
+            {
+                "type": "OVGZ / bond",
+                "name": position["isin"],
+                "custodian": position["custodian"],
+                "amount": f"{_format_amount(position['quantity'])} шт.",
+                "currency": "",
+                "cost": "неизвестно",
+                "maturity": "неизвестно",
+                "imported": True,
+                "confirmed": position["confirmed"],
+                "as_of": position["as_of"],
+                "nominal": position["nominal"],
+            }
+        )
+        if position["confirmed"] and position["nominal"] is not None:
+            currency = position["nominal"].currency
+            security_nominal_totals[currency] = (
+                security_nominal_totals.get(currency, Decimal("0")) + position["nominal"].amount
+            )
+    investment_rows.sort(
+        key=lambda item: (
+            item["type"] == "Deposit",
+            item["name"].casefold(),
+            item.get("custodian", "").casefold(),
+        )
+    )
     events = repo.list_cash_events()
     return {
         "accounts": accounts,
@@ -542,6 +606,10 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
         "control_default": control_default,
         "outlook": outlook,
         "holdings": holdings,
+        "investment_rows": tuple(investment_rows),
+        "matched_manual": tuple(matched_manual),
+        "imported_positions": imported_positions,
+        "security_nominal_totals": tuple(sorted(security_nominal_totals.items())),
         "payments": payments,
         "events": tuple(reversed(events[-30:])),
         "as_of": as_of,
@@ -560,6 +628,7 @@ def create_app(db_path: str | Path) -> FastAPI:
     _TEMPLATES.env.filters["amount"] = _format_amount
     token = secrets.token_urlsafe(32)
     app.state.csrf_token = token
+    import_secret = secrets.token_bytes(32)
 
     @app.middleware("http")
     async def private_headers(request: Request, call_next):
@@ -586,6 +655,8 @@ def create_app(db_path: str | Path) -> FastAPI:
         entered: dict[str, str] | None = None,
         form_error: str | None = None,
         schedule_rows: tuple[dict[str, str], ...] = (),
+        import_preview: tuple = (),
+        import_token: str = "",
         status_code: int = 200,
     ) -> HTMLResponse:
         """Redisplay the full page with safe, previously entered fields on errors."""
@@ -600,6 +671,10 @@ def create_app(db_path: str | Path) -> FastAPI:
                 "control_default": "",
                 "outlook": None,
                 "holdings": (),
+                "investment_rows": (),
+                "matched_manual": (),
+                "imported_positions": (),
+                "security_nominal_totals": (),
                 "payments": (),
                 "events": (),
                 "warning": None,
@@ -622,6 +697,8 @@ def create_app(db_path: str | Path) -> FastAPI:
                 "form_values": entered or {},
                 "form_error": form_error,
                 "schedule_rows": schedule_rows,
+                "import_preview": import_preview,
+                "import_token": import_token,
             },
             status_code=status_code,
         )
@@ -633,6 +710,58 @@ def create_app(db_path: str | Path) -> FastAPI:
         except ValueError:
             return HTMLResponse("Invalid evaluation date", status_code=422)
         return render_bank(request, selected)
+
+    @app.post("/bank/securities/preview", response_class=HTMLResponse)
+    async def preview_securities(request: Request):
+        """Read PDFs in memory, discard depositor details, show only safe facts."""
+        form = await request.form()
+        supplied = form.get("csrf")
+        if not isinstance(supplied, str) or not secrets.compare_digest(supplied, token):
+            return HTMLResponse("Forbidden", status_code=403)
+        if not db_path.is_file():
+            return HTMLResponse("Initialize the database first: fin db init", status_code=409)
+        try:
+            files = form.getlist("documents")
+            if not 1 <= len(files) <= 16:
+                raise ValueError("Выбери от 1 до 16 PDF выписок")
+            entries = []
+            for file in files:
+                if not isinstance(file, UploadFile):
+                    raise ValueError("Ожидается PDF-файл")
+                payload = await file.read(8 * 1024 * 1024 + 1)
+                entries.append(parse_securities_pdf(payload))
+            if len({entry.source_hash for entry in entries}) != len(entries):
+                raise ValueError("Одна и та же выписка выбрана повторно")
+            items = tuple(entries)
+            return render_bank(
+                request,
+                date.today(),
+                import_preview=items,
+                import_token=sign_preview(items, import_secret),
+            )
+        except ValueError as exc:
+            return render_bank(request, date.today(), form_error=str(exc), status_code=422)
+
+    @app.post("/bank/securities/confirm", response_class=HTMLResponse)
+    async def confirm_securities(request: Request):
+        """Require signed preview + explicit user approval; never persist raw PDFs."""
+        form = await request.form()
+        supplied = form.get("csrf")
+        if not isinstance(supplied, str) or not secrets.compare_digest(supplied, token):
+            return HTMLResponse("Forbidden", status_code=403)
+        if not db_path.is_file():
+            return HTMLResponse("Initialize the database first: fin db init", status_code=409)
+        try:
+            preview = verify_preview(_field(form, "preview_token"), import_secret)
+            _backup_before_edit(db_path)
+            with SQLiteCashRepository(db_path) as repo:
+                added = repo.import_securities_entries(preview)
+        except (ValueError, TypeError, sqlite3.Error, OSError) as exc:
+            return render_bank(request, date.today(), form_error=str(exc), status_code=422)
+        return RedirectResponse(
+            f"/bank?as_of={max(entry.as_of for entry in preview).isoformat()}&imported={added}#holdings",
+            status_code=303,
+        )
 
     @app.post("/bank/{kind}", response_class=HTMLResponse)
     async def submit(request: Request, kind: str):

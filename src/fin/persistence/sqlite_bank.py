@@ -21,8 +21,9 @@ from fin.domain.bank import (
     payment_balance,
 )
 from fin.domain.money import CurrencyMismatchError, Money
+from fin.domain.securities_import import SecuritiesEntry
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _SCHEMA = (
     """CREATE TABLE bond_instruments (
@@ -134,12 +135,30 @@ _SCHEMA_V4 = (
 )
 
 
+_SCHEMA_V5 = (
+    """CREATE TABLE securities_imports (
+        source_hash TEXT PRIMARY KEY,
+        event_key TEXT NOT NULL UNIQUE,
+        custodian TEXT NOT NULL,
+        isin TEXT NOT NULL,
+        as_of TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('closing', 'movement')),
+        quantity INTEGER NOT NULL,
+        nominal_per_unit TEXT,
+        currency TEXT,
+        CHECK ((nominal_per_unit IS NULL AND currency IS NULL)
+               OR (nominal_per_unit IS NOT NULL AND currency IS NOT NULL))
+    )""",
+    "CREATE INDEX securities_lookup ON securities_imports(custodian, isin, as_of)",
+)
+
+
 def _migrate(db: sqlite3.Connection) -> None:
-    """Atomically migrate versions 0–3 to 4; never discard historical data."""
+    """Atomically migrate versions 0–4 to 5; never discard historical data."""
     version = db.execute("PRAGMA user_version").fetchone()[0]
     if version == SCHEMA_VERSION:
         return
-    if version not in (0, 1, 2, 3):
+    if version not in (0, 1, 2, 3, 4):
         raise RuntimeError(f"Unsupported Fin database schema version: {version}")
     # Do not use executescript: it commits pending transactions implicitly.
     db.execute("BEGIN IMMEDIATE")
@@ -155,6 +174,9 @@ def _migrate(db: sqlite3.Connection) -> None:
                 db.execute(sql)
         if version < 4:
             for sql in _SCHEMA_V4:
+                db.execute(sql)
+        if version < 5:
+            for sql in _SCHEMA_V5:
                 db.execute(sql)
         db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         db.commit()
@@ -205,6 +227,115 @@ class SQLiteBankRepository:
 
     def schema_version(self) -> int:
         return self._db.execute("PRAGMA user_version").fetchone()[0]
+
+    def import_securities_entries(self, entries: tuple[SecuritiesEntry, ...]) -> int:
+        """Idempotent atomic import. Raw PDF and depositor PII are never persisted."""
+        if not 1 <= len(entries) <= 16:
+            raise ValueError("Select 1 to 16 supported security records")
+        if len({entry.source_hash for entry in entries}) != len(entries):
+            raise ValueError("Same statement uploaded multiple times")
+        added = 0
+        with self._db:
+            for entry in entries:
+                old = self._db.execute(
+                    """SELECT source_hash FROM securities_imports
+                       WHERE source_hash=? OR event_key=?""",
+                    (entry.source_hash, entry.event_key),
+                ).fetchone()
+                if old is not None:
+                    continue
+                nominal = entry.nominal_per_unit
+                if entry.kind == "closing":
+                    existing = self._db.execute(
+                        """SELECT quantity, nominal_per_unit, currency
+                           FROM securities_imports
+                           WHERE custodian=? AND isin=? AND as_of=? AND kind='closing'""",
+                        (entry.custodian, entry.isin, entry.as_of.isoformat()),
+                    ).fetchone()
+                    if existing is not None:
+                        if (
+                            existing["quantity"] == entry.quantity
+                            and existing["nominal_per_unit"]
+                            == (str(nominal.amount) if nominal else None)
+                            and existing["currency"] == (nominal.currency if nominal else None)
+                        ):
+                            continue
+                        raise ValueError("Conflicting closing statements for same day")
+                self._db.execute(
+                    """INSERT INTO securities_imports
+                       (source_hash, event_key, custodian, isin, as_of, kind, quantity,
+                        nominal_per_unit, currency)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        entry.source_hash,
+                        entry.event_key,
+                        entry.custodian,
+                        entry.isin,
+                        entry.as_of.isoformat(),
+                        entry.kind,
+                        entry.quantity,
+                        str(nominal.amount) if nominal is not None else None,
+                        nominal.currency if nominal is not None else None,
+                    ),
+                )
+                added += 1
+        return added
+
+    def list_securities_entries(self) -> tuple[SecuritiesEntry, ...]:
+        """Return normalized securities facts; no private PDF metadata."""
+        rows = self._db.execute(
+            """SELECT source_hash, event_key, custodian, isin, as_of, kind, quantity,
+                      nominal_per_unit, currency
+               FROM securities_imports ORDER BY as_of, custodian, isin, source_hash"""
+        ).fetchall()
+        return tuple(
+            SecuritiesEntry(
+                row["source_hash"],
+                row["event_key"],
+                row["custodian"],
+                row["isin"],
+                date.fromisoformat(row["as_of"]),
+                row["kind"],
+                row["quantity"],
+                _money(row["nominal_per_unit"], row["currency"])
+                if row["nominal_per_unit"] is not None
+                else None,
+            )
+            for row in rows
+        )
+
+    def securities_positions_on(self, as_of: date) -> tuple[dict, ...]:
+        """A later closing balance replaces earlier movements, never duplicates them.
+
+        Movement-only history is labeled as a documented net change, not as a
+        confirmed total. Do not combine with manually entered bond lots.
+        """
+        grouped: dict[tuple[str, str], list[SecuritiesEntry]] = {}
+        for entry in self.list_securities_entries():
+            if entry.as_of <= as_of:
+                grouped.setdefault((entry.custodian, entry.isin), []).append(entry)
+        positions = []
+        for (custodian, isin), entries in sorted(grouped.items()):
+            closings = [e for e in entries if e.kind == "closing"]
+            latest = max(closings, key=lambda e: e.as_of) if closings else None
+            cutoff = latest.as_of if latest else None
+            quantity = latest.quantity if latest else 0
+            for event in entries:
+                if event.kind == "movement" and (cutoff is None or event.as_of > cutoff):
+                    quantity += event.quantity
+            nominal = latest.nominal_per_unit if latest else None
+            positions.append(
+                {
+                    "custodian": custodian,
+                    "isin": isin,
+                    "quantity": quantity,
+                    "confirmed": latest is not None,
+                    "as_of": max(e.as_of for e in entries),
+                    "nominal": nominal * quantity if nominal is not None else None,
+                    "currency": nominal.currency if nominal is not None else None,
+                }
+            )
+        return tuple(positions)
 
     def update_bond_lot(self, lot: BondLot) -> None:
         """Edit purchase details without silently rewriting contractual payouts."""
