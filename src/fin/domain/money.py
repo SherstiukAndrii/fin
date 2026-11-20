@@ -30,9 +30,9 @@ class Money:
             raise TypeError("Money amount must be Decimal (not float or int)")
         if not self.amount.is_finite():
             raise ValueError("Money amount must be finite")
-        if not isinstance(self.currency, str) or re.fullmatch(
-            r"[A-Z][A-Z0-9]{0,15}", self.currency
-        ) is None:
+        if not isinstance(self.currency, str):
+            raise ValueError("Currency must be an uppercase, nonempty identifier")
+        if re.fullmatch(r"[A-Z][A-Z0-9]{0,15}", self.currency) is None:
             raise ValueError("Currency must be an uppercase, nonempty identifier")
 
     def _require_same_currency(self, other: "Money") -> None:
