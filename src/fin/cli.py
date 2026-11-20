@@ -3,6 +3,7 @@
 import argparse
 import sqlite3
 from collections.abc import Sequence
+from contextlib import closing
 from importlib.metadata import version
 from pathlib import Path
 
@@ -46,14 +47,11 @@ def _db_status(path: Path) -> int:
 
     try:
         # SQLite's URI mode=ro prevents status from accidentally creating a file.
-        with sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True) as db:
+        with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as db:
             schema_version = db.execute("PRAGMA user_version").fetchone()[0]
             integrity = db.execute("PRAGMA quick_check").fetchone()[0]
             tables = {
-                row[0]
-                for row in db.execute(
-                    "SELECT name FROM sqlite_master WHERE type = 'table'"
-                )
+                row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
             }
             invalid_foreign_key = db.execute("PRAGMA foreign_key_check").fetchone()
     except (OSError, sqlite3.Error) as exc:
