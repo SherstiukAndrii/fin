@@ -30,6 +30,8 @@ All product choices **Q01–Q16 are approved**. Details labeled *implementation 
 
 SQLite stores local data and supports backup/restore. Records use stable IDs, explicit dates and provenance. Automatic price feeds and imports are future adapters and do not change calculation semantics.
 
+**Future extension boundary — bank statements.** Core ledger, account snapshots, holdings and real settlement events must remain independent of bank export formats. A later Statement Analysis module introduces its own import batch, normalized bank transaction, category, statement-to-ledger match, analytical rule and explainable finding. These are **read-only analytical/staging records**, never automatically authoritative transactions. Matching a bank transfer, refund, bond coupon or deposit interest must prevent double booking. The core can expose stable Account/Event/Payment IDs and read-only repositories so statement adapters attach later without changes to Free, Fire or Total formulas. See [Statement Analysis design](statement-analysis.md).
+
 ## 2. Opening state, accounting and reconciliation
 
 The **opening snapshot is a closing state at date `s`**. Acquisition events at or before `s` have already affected opening cash and holdings; do not replay their debits. For each subsequent event, apply its effect **once** on its effective date. A transfer between own accounts changes account allocations but does not create new external income or increase Net Worth.
