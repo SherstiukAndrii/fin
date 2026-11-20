@@ -20,7 +20,7 @@ The installed `fin` command is equivalent to `python -m fin`. It only reports sc
 
 ## Run and test from VS Code (WSL)
 
-1. In VS Code, open the repository **in WSL**, not as a Windows-local folder. Use **Remote: Connect to WSL** (or `code .` from the WSL terminal). Open the repository folder or `fin.code-workspace`.
+1. In VS Code, open the **`fin.code-workspace` file in WSL** (not just the repository folder or a Windows-local window). From the repository root in a WSL terminal, run `code fin.code-workspace`, or use **File → Open Workspace from File…** in a WSL VS Code window.
 2. In the WSL terminal, once per clone, set up the project:
 
    ```bash
@@ -33,7 +33,7 @@ The installed `fin` command is equivalent to `python -m fin`. It only reports sc
    - **Fin: Tests** — run `pytest -v`. It is also the default VS Code **Run Test Task**.
 4. Read the output in VS Code's integrated terminal. A nonzero exit code means the task failed; fix and rerun before PR review.
 
-Tasks in `.vscode/tasks.json` use the repository's `.venv/bin/python` explicitly and require the WSL Linux environment. If VS Code says that `.venv/bin/python` is missing, repeat step 2 in the WSL repository root. The commands do not need activation with `source`.
+All VS Code project configuration lives in **`fin.code-workspace`**: the Python interpreter (`.venv/bin/python`), pytest discovery, and **Fin: Run / Fin: Tests** tasks. There is no separate `.vscode/tasks.json`. Open this workspace file to load the tasks. If VS Code reports a missing `.venv/bin/python`, repeat step 2. Task commands don't need `source` activation.
 
 ## Checks before a PR
 
@@ -51,6 +51,6 @@ GitHub Actions runs the same checks with Python 3.12 and 3.13 for pull requests 
 - `tests/` — automated smoke tests; later tests will cover money, dates, FX and investments.
 - `docs/` — approved financial rules and future modules.
 - `.github/workflows/ci.yml` — lint, formatting and test checks.
-- `fin.code-workspace` — existing VS Code workspace for use with WSL.
+- `fin.code-workspace` — single source of truth for VS Code settings, WSL Python interpreter, pytest discovery, run/test tasks.
 
 Development flow: small feature branch → Draft PR → automated checks and manual review → user-controlled squash merge. Do not commit `.venv`, generated files or private financial data.

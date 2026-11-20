@@ -1,8 +1,61 @@
 {
-	"folders": [
-		{
-			"path": "."
-		}
-	],
-	"settings": {}
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+      "tests"
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Fin: Run",
+        "type": "shell",
+        "command": "${workspaceFolder}/.venv/bin/python",
+        "args": [
+          "-m",
+          "fin"
+        ],
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated",
+          "clear": true
+        }
+      },
+      {
+        "label": "Fin: Tests",
+        "type": "shell",
+        "command": "${workspaceFolder}/.venv/bin/python",
+        "args": [
+          "-m",
+          "pytest",
+          "-v"
+        ],
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "group": {
+          "kind": "test",
+          "isDefault": true
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated",
+          "clear": true
+        }
+      }
+    ]
+  }
 }
