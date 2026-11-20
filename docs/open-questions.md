@@ -20,6 +20,12 @@ This file tracks **technical conventions and edge cases** to decide in the small
 | Backup and recovery | Frequency, retention, target directory and atomic snapshot/restore procedure for SQLite, including integrity test. | Regular local backup, manual export and restore and verified recovery; no requirement for cloud upload. |
 | Financial rounding | Currency-specific posting precision, instrument-specific fractional quantities and display precision, including error tolerance for exponential calculations. | Use Decimal; do not round arbitrary intermediates or equate 0 with unknown. |
 
+## Future module: investment calculators and online data
+
+A dedicated [Investment Calculators architecture](investment-calculators.md) reserves extensible engines for **OVGZ/other bonds, stocks/ETF, deposits, and other assets**. It starts with manual inputs and adds optional provider adapters, caching and read-only refresh while preserving offline work. NBU securities reference and FX are candidate official sources; stock/ETF quotes depend on provider licensing and coverage. Calculator what-if results never automatically become real transactions.
+
+Before calculator implementation, specify coupon/accrued-interest conventions, bond YTM numeric method and day counts, fees/taxes per scenario, stock split/dividend handling, cash-flow IRR degeneracy, quote staleness thresholds, and provider credentials/rate limits. Resolve in the respective small PR, not as blockers to the core skeleton.
+
 ## Future module: bank statement analysis
 
 The user has requested a planned **bank statement analysis capability** for identifying possibly unjustified spending and missed financial opportunities. The [Statement Analysis architecture](statement-analysis.md) defines a separate read-only import/normalization/deduplication/matching/analytics pipeline. The current MVP's manual snapshot and Q01–Q16 remain unchanged.
