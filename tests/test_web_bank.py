@@ -386,6 +386,7 @@ def test_csp_permits_same_origin_ajax_form_requests(bank_ui):
     assert "form-action 'self'" in csp
     assert "frame-ancestors 'none'" in csp
 
+
 def test_inline_actual_receipt_can_differ_from_plan_and_show_variance(bank_ui):
     from fin.domain.bank import PaymentStatus, payment_balance
 
@@ -451,9 +452,7 @@ def test_inline_actual_receipt_can_differ_from_plan_and_show_variance(bank_ui):
         payment = repo.get_payment("interest-inline")
         assert payment is not None
         assert payment.expected.amount == Decimal("80")
-        balance = payment_balance(
-            payment, repo.list_receipts(payment.id), date(2027, 3, 5)
-        )
+        balance = payment_balance(payment, repo.list_receipts(payment.id), date(2027, 3, 5))
         assert balance.received.amount == Decimal("95")
         assert balance.outstanding.amount == Decimal("0")
         assert balance.excess.amount == Decimal("15")
@@ -462,4 +461,3 @@ def test_inline_actual_receipt_can_differ_from_plan_and_show_variance(bank_ui):
     page = client.get("/bank?as_of=2027-03-05")
     assert ">15</td>" in page.text
     assert "Сверх плана" in page.text
-
