@@ -2,7 +2,7 @@
 
 **Status:** approved architectural extension, **not part of the current Bank + Overview MVP**. The user wants to analyze bank statements to find potentially unjustified spending and missed financial opportunities. This page designs extension points; it does not approve specific heuristics, bank connections, automated financial decisions or external AI uploads.
 
-[Fin MVP](mvp.md) · [Domain model](domain-model.md) · [Implementation details](open-questions.md)
+[Fin MVP](mvp.md) · [Domain model](domain-model.md) · [Investment Calculators](investment-calculators.md) · [Implementation details](open-questions.md)
 
 ## Product goal and boundaries
 
@@ -89,6 +89,7 @@ Do not treat a source file hash as the only duplicate key: the same underlying t
 - Import a 100 UAH bond coupon matching a manually recorded actual coupon: identify a match, never show 200 UAH cash or double realized Fire income.
 - Detect a monthly subscription rise from 120 to 150 UAH: show a **30 UAH/month** change and the linked payment history; allow “intentional” dismissal.
 - A 1,000 UAH cash withdrawal remains “cash movement / needs categorization”, not automatically 1,000 UAH of consumption.
+- An investment calculator models four hypothetical future OVGZ cash flows without creating bank transactions. Only a **real actual payment**, reconciled against the known holding, may affect the primary ledger and realized Fire.
 - A hypothetical “idle funds” finding shows period, balance, liquidity reserve, rate source/date, gross/net estimate and caveats; with no reliable rate it shows **no estimated opportunity**.
 
 ## Delivery sequence
