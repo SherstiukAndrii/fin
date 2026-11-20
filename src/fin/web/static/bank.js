@@ -32,12 +32,20 @@
     }
     const button = form.querySelector("button");
     if (button) button.disabled = true;
+    let response;
     try {
-      const response = await fetch(url, {
+      response = await fetch(url, {
         method, body: method === "GET" ? undefined : data,
         credentials: "same-origin",
         headers: {"X-Requested-With": "XMLHttpRequest"}
       });
+    } catch (error) {
+      console.error("Fin Bank request failed", error);
+      popup(form, "Не удалось отправить запрос: " + (error?.message || String(error)));
+      if (button) button.disabled = false;
+      return;
+    }
+    try {
       const doc = new DOMParser().parseFromString(await response.text(), "text/html");
       if (!response.ok) {
         popup(form, doc.querySelector('[role="alert"]')?.textContent?.trim()
@@ -46,6 +54,8 @@
       }
       const next = doc.querySelector("main");
       if (!next) { popup(form, "Неправильный ответ локального сервера."); return; }
+      // A successful POST may have already committed even if the UI refresh fails.
+      // Keep the success response separate from any client-side rendering exception.
       page.replaceWith(next);
       const details = next.querySelectorAll("details");
       for (const index of opened) if (details[index]) details[index].open = true;
@@ -55,8 +65,19 @@
         candidate => new URL(candidate.action).pathname === new URL(form.action).pathname
       );
       if (matching) popup(matching, "Сохранено.", true);
-    } catch (_error) {
-      popup(form, "Ошибка связи с локальным сервером. Поля формы не сброшены.");
+    } catch (error) {
+      console.error("Fin Bank response handling failed", error);
+      const message = "Ответ сервера получен, но интерфейс не обновился: "
+        + (error?.message || String(error))
+        + ". Проверь запись перед повторной отправкой.";
+      if (form.isConnected) popup(form, message);
+      else {
+        const alert = document.createElement("p");
+        alert.className = "inline-error";
+        alert.setAttribute("role", "alert");
+        alert.textContent = message;
+        document.querySelector("main")?.prepend(alert);
+      }
     } finally {
       if (button) button.disabled = false;
     }
