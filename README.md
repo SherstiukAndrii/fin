@@ -2,7 +2,7 @@
 
 Single-user, offline-first personal finance app for Windows and Linux. The planned MVP contains **Bank** and **Overview**; see [MVP requirements](docs/mvp.md) and the [domain model](docs/domain-model.md).
 
-**Current state:** Python package scaffold only. No financial calculations, database or web UI yet. Future investment calculators and statement analysis are documented under `docs/`.
+**Current state:** Python package scaffold and a tested `Money` value object. No real account balances, FX engine, database or web UI yet. Future investment calculators and statement analysis are documented under `docs/`.
 
 ## Development with Windows + WSL (Ubuntu) + VS Code
 
@@ -55,3 +55,30 @@ GitHub Actions runs the same checks with Python 3.12 and 3.13 for pull requests 
 - `fin.code-workspace` — single source of truth for VS Code settings, WSL Python interpreter, pytest discovery, run/test/lint/format/setup tasks.
 
 Development flow: small feature branch → Draft PR → automated checks and manual review → user-controlled squash merge. Do not commit `.venv`, generated files or private financial data.
+
+## Exact money amounts
+
+# Money value object
+
+Money calculations use exact `Decimal` inputs and explicit currency identifiers.
+Mixed-currency addition/subtraction raises an error: an exchange rate must come
+from a **separate dated FX service** (future PR). No implicit two-decimal rule.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+from fin.domain.money import Money
+
+price = Money(Decimal("1.005"), "UAH")
+posted = price.rounded(decimal_places=2, rounding=ROUND_HALF_UP)
+
+assert price.amount == Decimal("1.005")
+assert posted.amount == Decimal("1.01")
+```
+
+Rounding policies depend on the actual currency, instrument or payment context
+and must be chosen by its caller. Never round intermediate calculations simply
+because a bank account commonly displays two decimals.
+
+This PR is limited to the shared Money primitive. FX, valuations, coupons,
+taxes, database persistence and actual transaction posting are later work.
