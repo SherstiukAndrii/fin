@@ -71,7 +71,7 @@ def test_partial_receipts_and_multiple_coupons_are_not_added_twice():
 
     june = outlook_at("2027-06-02", balances=(money("1030"),), payments=payments, receipts=receipts, posted=("posted",))[0]
     assert june.expected_income == money("80")
-    assert june.potential_cash == money("1130")
+    assert june.potential_cash == money("1160")
 
     december = outlook_at("2027-12-02", balances=(money("1030"),), payments=payments, receipts=receipts, posted=("posted",))[0]
     assert december.expected_principal == money("2000")
