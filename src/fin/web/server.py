@@ -32,6 +32,7 @@ from fin.domain.bank import (
     ScheduledPayment,
     payment_balance,
 )
+from fin.domain.cash_outlook import cash_outlook
 from fin.domain.money import Money
 from fin.persistence import SQLiteCashRepository
 
@@ -469,6 +470,16 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
                 }
             )
     payments.sort(key=lambda item: (item["due"], item["id"]))
+    outlook = None
+    if opening is not None and as_of >= opening.as_of:
+        outlook = cash_outlook(
+            balances.values(),
+            (entry["model"] for entry in payments),
+            (receipt["item"] for entry in payments for receipt in entry["receipts"]),
+            posted_receipts,
+            opening_on=opening.as_of,
+            as_of=as_of,
+        )
     events = repo.list_cash_events()
     return {
         "accounts": accounts,
@@ -476,6 +487,7 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
         "bank_names": bank_names,
         "custodian_names": custodian_names,
         "balances": balances,
+        "outlook": outlook,
         "holdings": holdings,
         "payments": payments,
         "events": tuple(reversed(events[-30:])),
@@ -531,6 +543,7 @@ def create_app(db_path: str | Path) -> FastAPI:
                 "bank_names": (),
                 "custodian_names": (),
                 "balances": {},
+                "outlook": None,
                 "holdings": (),
                 "payments": (),
                 "events": (),
