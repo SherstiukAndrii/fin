@@ -261,12 +261,11 @@ def payment_balance(
     """Reconcile receipts against a schedule without posting money to an account.
 
     Future-dated receipts are excluded from the as-of balance. Duplicate receipt
-    IDs, mismatched obligations/currencies, and excess amounts are rejected.
-    Unusual overpayments or reversals need an explicit later reconciliation model.
+    IDs and mismatched obligations/currencies are rejected. Overpayments are
+    accepted as actual amounts; remaining expected amount cannot be negative.
     """
     _date(as_of)
     received = Money(Decimal("0"), payment.expected.currency)
-    total = Money(Decimal("0"), payment.expected.currency)
     seen: set[str] = set()
     for receipt in receipts:
         if receipt.id in seen:
@@ -275,13 +274,10 @@ def payment_balance(
         if receipt.payment_id != payment.id:
             raise ValueError("Actual receipt belongs to another payment")
         _currency(receipt.amount, payment.expected.currency)
-        total += receipt.amount
         if receipt.received_on <= as_of:
             received += receipt.amount
-    if total.amount > payment.expected.amount:
-        raise ValueError("Receipts exceed expected payment; reconciliation required")
-    outstanding = payment.expected - received
-    if outstanding.amount == 0:
+    outstanding = Money(max(Decimal("0"), payment.expected.amount - received.amount), payment.expected.currency)
+    if received.amount >= payment.expected.amount:
         status = PaymentStatus.PAID
     elif as_of > payment.due_on:
         status = PaymentStatus.OVERDUE
