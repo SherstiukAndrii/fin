@@ -101,7 +101,7 @@ def test_bond_quantity_locked_after_payment(edit_browser):
         assert db.get_bond_lot(lot.id).quantity == 2
 
 
-def test_payment_edits_do_not_allow_losing_existing_receipts(edit_browser):
+def test_payment_edits_keep_receipts_when_fact_exceeds_new_plan(edit_browser):
     _, path, _, _ = edit_browser
     assert sample_bond(edit_browser).status_code == 303
     with SQLiteCashRepository(path) as db:
@@ -129,7 +129,7 @@ def test_payment_edits_do_not_allow_losing_existing_receipts(edit_browser):
         ).status_code
         == 303
     )
-    invalid = post(
+    changed = post(
         edit_browser,
         "edit_payment",
         id=payment.id,
@@ -138,9 +138,10 @@ def test_payment_edits_do_not_allow_losing_existing_receipts(edit_browser):
         due_on="2027-06-01",
         expected="40",
     )
-    assert invalid.status_code == 422
+    assert changed.status_code == 303
     with SQLiteCashRepository(path) as db:
-        assert db.get_payment(payment.id).expected.amount == Decimal("80")
+        assert db.get_payment(payment.id).expected.amount == Decimal("40")
+        assert db.list_receipts(payment.id)[0].amount.amount == Decimal("50")
 
 
 def test_opening_account_cash_event_are_editable(edit_browser):

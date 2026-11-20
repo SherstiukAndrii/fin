@@ -131,28 +131,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Local HTTP port (default: 8765)",
     )
 
-    babki = commands.add_parser("babki", help="Import local Babki workbook")
-    babki_actions = babki.add_subparsers(dest="babki_action", required=True)
-    babki_import = babki_actions.add_parser("import", help="Stage Babki.xlsx for Bank")
-    babki_import.add_argument("file", type=Path, help="Local path to Babki.xlsx")
-    babki_import.add_argument("--path", type=Path, default=_default_db())
-
     args = parser.parse_args(argv)
-    if args.command == "babki":
-        if _db_status(args.path) != 0:
-            print("Run 'fin db init' first.")
-            return 1
-        from fin.importers.babki import import_babki
-
-        try:
-            with SQLiteBankRepository(args.path) as repository:
-                count = import_babki(args.file, repository._db)
-        except (OSError, ValueError, sqlite3.Error) as exc:
-            print(f"Babki import failed: {exc}")
-            return 1
-        print(f"Babki rows staged: {count}; open Bank → Babki import (not booked cash)")
-        return 0
-
     if args.command == "web":
         if not 1024 <= args.port <= 65535:
             parser.error("Port must be between 1024 and 65535")

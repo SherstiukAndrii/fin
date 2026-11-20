@@ -33,7 +33,6 @@ from fin.domain.bank import (
     payment_balance,
 )
 from fin.domain.money import Money
-from fin.importers.babki import staged_babki_rows
 from fin.persistence import SQLiteCashRepository
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -72,8 +71,13 @@ def _decimal(form, name: str, *, optional: bool = False) -> Decimal | None:
     value = _field(form, name, optional=optional)
     if not value and optional:
         return None
+    # Grouped numbers from the browser (e.g. "1 000 000.50") must
+    # round-trip to an exact Decimal without converting through float.
+    normalized = "".join(value.split())
+    if "," in normalized and "." not in normalized:
+        normalized = normalized.replace(",", ".")
     try:
-        result = Decimal(value)
+        result = Decimal(normalized)
     except InvalidOperation as exc:
         raise ValueError(f"Invalid number: {name}") from exc
     if not result.is_finite():
@@ -89,7 +93,7 @@ def _date(form, name: str) -> date:
 
 
 def _quantity(form, name: str) -> int:
-    value = _field(form, name)
+    value = "".join(_field(form, name).split())
     try:
         quantity = int(value)
     except ValueError as exc:
@@ -101,6 +105,44 @@ def _quantity(form, name: str) -> int:
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
+
+
+def _scheduled_from_form(
+    form, holding_id: str, currency: str, *, is_bond: bool
+) -> tuple[ScheduledPayment, ...]:
+    """Read optional repeated payout rows, without inventing coupon amounts or dates."""
+    kinds = form.getlist("schedule_kind")
+    dates = form.getlist("schedule_on")
+    amounts = form.getlist("schedule_amount")
+    if len(kinds) != len(dates) or len(dates) != len(amounts):
+        raise ValueError("Заполни тип, дату и сумму каждой строки выплат")
+    if len(kinds) > 100:
+        raise ValueError("Не больше 100 плановых выплат за один раз")
+    allowed = (PaymentKind.COUPON,) if is_bond else (PaymentKind.INTEREST,)
+    payments: list[ScheduledPayment] = []
+    for index, (kind, due, amount) in enumerate(zip(kinds, dates, amounts, strict=True), 1):
+        if not all(isinstance(v, str) and len(v) <= 2048 for v in (kind, due, amount)):
+            raise ValueError(f"Недопустимые данные выплаты №{index}")
+        if not due.strip() and not amount.strip():
+            continue  # untouched optional row
+        if not due.strip() or not amount.strip():
+            raise ValueError(f"Укажи дату и сумму выплаты №{index}")
+        try:
+            payment_kind = PaymentKind(kind)
+        except ValueError as exc:
+            raise ValueError(f"Неизвестный тип выплаты №{index}") from exc
+        if payment_kind not in allowed:
+            raise ValueError(f"Тип выплаты №{index} не подходит для вложения")
+        payments.append(
+            ScheduledPayment(
+                _new_id("payment"),
+                holding_id,
+                payment_kind,
+                _date({"schedule_on": due}, "schedule_on"),
+                Money(_decimal({"schedule_amount": amount}, "schedule_amount"), currency),
+            )
+        )
+    return tuple(payments)
 
 
 def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
@@ -193,6 +235,11 @@ def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
             )
         price = _decimal(form, "unit_price", optional=True)
         fees = _decimal(form, "paid_fees", optional=True)
+        provider = _field(form, "custodian", optional=True)
+        if provider == "__other__":
+            provider = _field(form, "custodian_other")
+        if editing and "custodian" not in form:
+            provider = original.custodian
         lot = BondLot(
             _field(form, "id")
             if editing
@@ -202,19 +249,24 @@ def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
             _quantity(form, "quantity"),
             None if price is None else Money(price, currency),
             None if fees is None else Money(fees, currency),
+            provider or None,
         )
         if editing:
             repo.update_bond_lot(lot)
         else:
-            repo.add_bond_lot(lot)
+            payments = _scheduled_from_form(form, lot.id, currency, is_bond=True)
+            repo.add_holding_with_schedule(lot, payments)
     elif kind == "deposit":
         currency = _field(form, "currency").upper()
+        bank_name = _field(form, "bank")
+        if bank_name == "__other__":
+            bank_name = _field(form, "bank_other")
         annual_rate = _decimal(form, "annual_rate", optional=True)
         deposit = Deposit(
             _field(form, "id")
             if editing
             else (_field(form, "id", optional=True) or _new_id("deposit")),
-            _field(form, "bank"),
+            bank_name,
             Money(_decimal(form, "principal"), currency),
             _date(form, "opened_on"),
             _date(form, "matures_on"),
@@ -223,7 +275,8 @@ def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
         if editing:
             repo.update_deposit(deposit)
         else:
-            repo.add_deposit(deposit)
+            payments = _scheduled_from_form(form, deposit.id, currency, is_bond=False)
+            repo.add_holding_with_schedule(deposit, payments)
     elif kind == "payment":
         holding_id = _field(form, "holding_id")
         bond = repo.get_bond_lot(holding_id)
@@ -332,7 +385,24 @@ def _backup_before_edit(path: Path) -> None:
 def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
     accounts = repo.list_accounts()
     opening = repo.get_opening_snapshot()
-    babki_rows = staged_babki_rows(repo._db)
+    bank_names = tuple(
+        sorted(
+            {
+                *(account.name for account in accounts if account.kind == AccountKind.BANK),
+                *(deposit.bank for deposit in repo.list_deposits()),
+            },
+            key=str.casefold,
+        )
+    )
+    custodian_names = tuple(
+        sorted(
+            {
+                *bank_names,
+                *(bond.custodian for bond in repo.list_bond_lots() if bond.custodian),
+            },
+            key=str.casefold,
+        )
+    )
     warning = None
     balances = {}
     if opening:
@@ -347,12 +417,16 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
                 "id": bond.id,
                 "type": "OVGZ / bond",
                 "name": bond.instrument.isin,
+                "custodian": bond.custodian or "Не указан",
                 "amount": f"{_format_amount(bond.quantity)} × {_format_amount(bond.instrument.face_value)}",
                 "currency": bond.instrument.face_value.currency,
                 "maturity": bond.instrument.matures_on,
                 "cost": _format_amount(bond.cost_basis) if bond.cost_basis else "неизвестно",
                 "model": bond,
-                "label": f"ОВГЗ {bond.instrument.isin} · {bond.quantity} шт. · {bond.acquired_on}",
+                "label": (
+                    f"ОВГЗ {bond.instrument.isin} · {bond.custodian or 'Не указан'}"
+                    f" · {bond.quantity} шт. · {bond.acquired_on}"
+                ),
             }
         )
     for deposit in repo.list_deposits():
@@ -386,7 +460,9 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
                     "expected": payment.expected,
                     "received": balance.received,
                     "outstanding": balance.outstanding,
+                    "excess": balance.excess,
                     "status": balance.status.value,
+                    "auto_principal": repo.is_auto_principal(payment.id),
                     "model": payment,
                     "holding_label": holding["label"],
                     "receipts": [{"item": r, "posted": r.id in posted_receipts} for r in receipts],
@@ -397,7 +473,8 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
     return {
         "accounts": accounts,
         "opening": opening,
-        "babki_rows": babki_rows,
+        "bank_names": bank_names,
+        "custodian_names": custodian_names,
         "balances": balances,
         "holdings": holdings,
         "payments": payments,
@@ -443,6 +520,7 @@ def create_app(db_path: str | Path) -> FastAPI:
         failed_form: str | None = None,
         entered: dict[str, str] | None = None,
         form_error: str | None = None,
+        schedule_rows: tuple[dict[str, str], ...] = (),
         status_code: int = 200,
     ) -> HTMLResponse:
         """Redisplay the full page with safe, previously entered fields on errors."""
@@ -450,7 +528,8 @@ def create_app(db_path: str | Path) -> FastAPI:
             data = {
                 "accounts": (),
                 "opening": None,
-                "babki_rows": (),
+                "bank_names": (),
+                "custodian_names": (),
                 "balances": {},
                 "holdings": (),
                 "payments": (),
@@ -469,10 +548,12 @@ def create_app(db_path: str | Path) -> FastAPI:
             context={
                 **data,
                 "csrf": token,
+                "today": date.today(),
                 "missing_db": missing,
                 "failed_form": failed_form,
                 "form_values": entered or {},
                 "form_error": form_error,
+                "schedule_rows": schedule_rows,
             },
             status_code=status_code,
         )
@@ -506,12 +587,23 @@ def create_app(db_path: str | Path) -> FastAPI:
                 for name, value in form.items()
                 if name != "csrf" and isinstance(value, str) and len(value) <= 2048
             }
+            rows = tuple(
+                {"kind": k, "on": d, "amount": a}
+                for k, d, a in zip(
+                    form.getlist("schedule_kind"),
+                    form.getlist("schedule_on"),
+                    form.getlist("schedule_amount"),
+                    strict=False,
+                )
+                if all(isinstance(v, str) and len(v) <= 2048 for v in (k, d, a))
+            )
             return render_bank(
                 request,
                 date.today(),
                 failed_form=kind,
                 entered=entered,
                 form_error=str(exc),
+                schedule_rows=rows[:100],
                 status_code=422,
             )
         as_of = request.query_params.get("as_of")

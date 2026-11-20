@@ -47,4 +47,3 @@ Before a future implementation PR, agree on the first import format/bank export,
 3. Provide tests for boundary dates, missing values, zero amounts, duplicate prevention and currency handling.
 4. Keep all changes on a feature branch in a Draft PR. The user reviews and performs the merge manually.
 
-The [Babki reference](reference/babki.md) is **non-normative** UI/workflow inspiration only.

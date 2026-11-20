@@ -70,11 +70,11 @@ def payments(bond: BondLot) -> tuple[ScheduledPayment, ...]:
 def test_migration_idempotent_and_survives_reopen(tmp_path) -> None:
     path = tmp_path / "bank.sqlite3"
     with SQLiteBankRepository(path) as store:
-        assert store.schema_version() == SCHEMA_VERSION == 2
+        assert store.schema_version() == SCHEMA_VERSION == 3
         store.add_bond_lot(lot())
         store.add_deposit(deposit())
     with SQLiteBankRepository(path) as store:
-        assert store.schema_version() == 2
+        assert store.schema_version() == 3
         assert store.get_bond_lot("lot-1") == lot()
         assert store.get_deposit("deposit-1") == deposit()
         assert store.get_bond_lot("missing") is None
@@ -194,15 +194,19 @@ def test_duplicate_receipt_cannot_credit_twice(tmp_path) -> None:
         assert store.list_receipts(payment.id) == (receipt,)
 
 
-def test_overpayment_rejected_before_insert(tmp_path) -> None:
+def test_actual_receipts_may_exceed_plan_and_remain_auditable(tmp_path) -> None:
     with SQLiteBankRepository(tmp_path / "fin.db") as store:
         store.add_bond_lot(lot())
         payment = payments(lot())[0]
         store.add_payment(payment)
         store.add_receipt(ActualReceipt("r1", payment.id, date(2028, 3, 1), amount("50")))
-        with pytest.raises(ValueError, match="exceed"):
-            store.add_receipt(ActualReceipt("r2", payment.id, date(2028, 3, 2), amount("31")))
-        assert len(store.list_receipts(payment.id)) == 1
+        store.add_receipt(ActualReceipt("r2", payment.id, date(2028, 3, 2), amount("31")))
+        balance = payment_balance(payment, store.list_receipts(payment.id), date(2028, 3, 2))
+        assert balance.received == amount("81")
+        assert balance.outstanding == amount("0")
+        assert balance.excess == amount("1")
+        assert balance.status == PaymentStatus.EXCESS
+        assert len(store.list_receipts(payment.id)) == 2
 
 
 def test_orphan_payment_and_receipt_are_rejected(tmp_path) -> None:

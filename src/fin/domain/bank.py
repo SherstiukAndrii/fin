@@ -50,6 +50,7 @@ class PaymentStatus(StrEnum):
     PARTIAL = "partial"
     OVERDUE = "overdue"
     PAID = "paid"
+    EXCESS = "excess"
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +77,7 @@ class BondLot:
     quantity: int
     unit_price: Money | None
     paid_fees: Money | None
+    custodian: str | None = None  # Bank/broker holding this lot; not part of the ISIN.
 
     def __post_init__(self) -> None:
         _identifier(self.id)
@@ -86,6 +88,12 @@ class BondLot:
             raise TypeError("Bond quantity must be an integer")
         if self.quantity <= 0:
             raise ValueError("Bond quantity must be positive")
+        if self.custodian is not None and (
+            not isinstance(self.custodian, str)
+            or not self.custodian.strip()
+            or len(self.custodian) > 200
+        ):
+            raise ValueError("Custodian must be a nonempty institution name (max 200 characters)")
         if self.unit_price is not None:
             _positive(self.unit_price)
             _currency(self.unit_price, self.instrument.face_value.currency)
@@ -190,6 +198,7 @@ class PaymentBalance:
     received: Money
     outstanding: Money
     status: PaymentStatus
+    excess: Money  # Confirmed amount above the plan, never silently discarded.
 
 
 def bond_schedule(lot: BondLot, terms: Iterable[BondPaymentTerm]) -> tuple[ScheduledPayment, ...]:
@@ -261,12 +270,11 @@ def payment_balance(
     """Reconcile receipts against a schedule without posting money to an account.
 
     Future-dated receipts are excluded from the as-of balance. Duplicate receipt
-    IDs, mismatched obligations/currencies, and excess amounts are rejected.
-    Unusual overpayments or reversals need an explicit later reconciliation model.
+    IDs and mismatched obligations/currencies are rejected. The actual amount
+    may differ from the plan: overpayments are explicitly reported as excess.
     """
     _date(as_of)
     received = Money(Decimal("0"), payment.expected.currency)
-    total = Money(Decimal("0"), payment.expected.currency)
     seen: set[str] = set()
     for receipt in receipts:
         if receipt.id in seen:
@@ -275,13 +283,15 @@ def payment_balance(
         if receipt.payment_id != payment.id:
             raise ValueError("Actual receipt belongs to another payment")
         _currency(receipt.amount, payment.expected.currency)
-        total += receipt.amount
         if receipt.received_on <= as_of:
             received += receipt.amount
-    if total.amount > payment.expected.amount:
-        raise ValueError("Receipts exceed expected payment; reconciliation required")
-    outstanding = payment.expected - received
-    if outstanding.amount == 0:
+    delta = payment.expected - received
+    zero = Money(Decimal("0"), payment.expected.currency)
+    outstanding = delta if delta.amount > 0 else zero
+    excess = Money(-delta.amount, payment.expected.currency) if delta.amount < 0 else zero
+    if excess.amount > 0:
+        status = PaymentStatus.EXCESS
+    elif outstanding.amount == 0:
         status = PaymentStatus.PAID
     elif as_of > payment.due_on:
         status = PaymentStatus.OVERDUE
@@ -289,4 +299,4 @@ def payment_balance(
         status = PaymentStatus.PARTIAL
     else:
         status = PaymentStatus.EXPECTED
-    return PaymentBalance(received=received, outstanding=outstanding, status=status)
+    return PaymentBalance(received=received, outstanding=outstanding, status=status, excess=excess)

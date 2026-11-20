@@ -1,6 +1,6 @@
 # Fin MVP specification
 
-Fin is a single-user, local, offline-first financial web application. The first version has **Bank** (holdings and payment records) and **Overview** (liquidity, net worth and projections). Windows/Linux browsers are supported through a locally running application. The prototype spreadsheet *Babki* informs workflow and presentation only, not the application schema or formulas.
+Fin is a single-user, local, offline-first financial web application. The first version has **Bank** (holdings and payment records) and **Overview** (liquidity, net worth and projections). Windows/Linux browsers are supported through a locally running application.
 
 The [domain model](domain-model.md) is normative for records, calculations and invariants. [Implementation details](open-questions.md) lists still-unresolved technical parameters. **All financial decisions Q01–Q16 have been approved**; they are not open questions. The [Investment Calculators architecture](investment-calculators.md) provides a modular path for OVGZ, shares/ETF, deposits and other assets, with future optional online data providers. The [future Statement Analysis architecture](statement-analysis.md) keeps bank-statement import and spending/opportunity analytics separate from the current MVP ledger.
 
