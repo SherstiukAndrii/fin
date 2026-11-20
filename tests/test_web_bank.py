@@ -385,3 +385,81 @@ def test_csp_permits_same_origin_ajax_form_requests(bank_ui):
     assert "connect-src 'self'" in csp
     assert "form-action 'self'" in csp
     assert "frame-ancestors 'none'" in csp
+
+def test_inline_actual_receipt_can_differ_from_plan_and_show_variance(bank_ui):
+    from fin.domain.bank import PaymentStatus, payment_balance
+
+    client, path, _ = bank_ui
+    assert (
+        post(
+            bank_ui,
+            "deposit",
+            id="dep-inline",
+            bank="Sample bank",
+            currency="UAH",
+            principal="1000",
+            opened_on="2027-01-02",
+            matures_on="2027-12-31",
+            annual_rate="0.15",
+        ).status_code
+        == 303
+    )
+    assert (
+        post(
+            bank_ui,
+            "payment",
+            id="interest-inline",
+            holding_id="dep-inline",
+            kind="interest",
+            due_on="2027-03-01",
+            expected="80",
+        ).status_code
+        == 303
+    )
+    page = client.get("/bank?as_of=2027-03-01")
+    assert page.status_code == 200
+    assert "<th>Отклонение</th>" in page.text
+    assert "<summary>Записать факт</summary>" in page.text
+    assert 'name="payment_id" value="interest-inline"' in page.text
+    assert 'name="amount" value="80"' in page.text
+
+    assert (
+        post(
+            bank_ui,
+            "receipt",
+            payment_id="interest-inline",
+            amount="30",
+            received_on="2027-03-02",
+        ).status_code
+        == 303
+    )
+    page = client.get("/bank?as_of=2027-03-03")
+    assert ">-50</td>" in page.text
+    assert 'name="amount" value="50"' in page.text
+
+    assert (
+        post(
+            bank_ui,
+            "receipt",
+            payment_id="interest-inline",
+            amount="65",
+            received_on="2027-03-04",
+        ).status_code
+        == 303
+    )
+    with SQLiteCashRepository(path) as repo:
+        payment = repo.get_payment("interest-inline")
+        assert payment is not None
+        assert payment.expected.amount == Decimal("80")
+        balance = payment_balance(
+            payment, repo.list_receipts(payment.id), date(2027, 3, 5)
+        )
+        assert balance.received.amount == Decimal("95")
+        assert balance.outstanding.amount == Decimal("0")
+        assert balance.excess.amount == Decimal("15")
+        assert balance.status == PaymentStatus.EXCESS
+        assert repo.list_cash_events() == ()
+    page = client.get("/bank?as_of=2027-03-05")
+    assert ">15</td>" in page.text
+    assert "Сверх плана" in page.text
+
