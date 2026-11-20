@@ -24,7 +24,9 @@ def scheduled(
     amount: str,
     currency: str = "UAH",
 ) -> ScheduledPayment:
-    return ScheduledPayment(payment_id, "lot1", kind, date.fromisoformat(due), money(amount, currency))
+    return ScheduledPayment(
+        payment_id, "lot1", kind, date.fromisoformat(due), money(amount, currency)
+    )
 
 
 def receipt(receipt_id: str, payment_id: str, received: str, amount: str) -> ActualReceipt:
@@ -62,18 +64,36 @@ def test_partial_receipts_and_multiple_coupons_are_not_added_twice():
         receipt("future", "march", "2027-03-09", "30"),
     )
     # The posted 30 is already inside the account balance.
-    march = outlook_at("2027-03-05", balances=(money("1030"),), payments=payments, receipts=receipts, posted=("posted",))[0]
+    march = outlook_at(
+        "2027-03-05",
+        balances=(money("1030"),),
+        payments=payments,
+        receipts=receipts,
+        posted=("posted",),
+    )[0]
     assert march.actual_cash == money("1030")
     assert march.uncredited == money("20")
     assert march.expected_income == money("30")
     assert march.expected_principal == money("0")
     assert march.potential_cash == money("1080")
 
-    june = outlook_at("2027-06-02", balances=(money("1030"),), payments=payments, receipts=receipts, posted=("posted",))[0]
+    june = outlook_at(
+        "2027-06-02",
+        balances=(money("1030"),),
+        payments=payments,
+        receipts=receipts,
+        posted=("posted",),
+    )[0]
     assert june.expected_income == money("80")
     assert june.potential_cash == money("1160")
 
-    december = outlook_at("2027-12-02", balances=(money("1030"),), payments=payments, receipts=receipts, posted=("posted",))[0]
+    december = outlook_at(
+        "2027-12-02",
+        balances=(money("1030"),),
+        payments=payments,
+        receipts=receipts,
+        posted=("posted",),
+    )[0]
     assert december.expected_principal == money("2000")
     assert december.potential_cash == money("3160")
 
@@ -158,45 +178,57 @@ def outlook_html(browser, day: str) -> str:
     client, _, _ = browser
     page = client.get(f"/bank?as_of={day}")
     assert page.status_code == 200
-    return page.text.split('<section class="card" id="cash-outlook">', 1)[1].split(
-        "</section>", 1
-    )[0]
+    return page.text.split('<section class="card" id="cash-outlook">', 1)[1].split("</section>", 1)[
+        0
+    ]
 
 
 def test_outlook_is_read_only_and_tracks_explicit_credit(browser):
     client, db, _ = browser
-    assert post(browser, "account", id="bank", name="Sample", kind="bank", currency="UAH").status_code == 303
+    assert (
+        post(browser, "account", id="bank", name="Sample", kind="bank", currency="UAH").status_code
+        == 303
+    )
     assert post(browser, "opening", as_of="2027-01-01", balance_bank="100").status_code == 303
     # The deposit was already owned at the opening snapshot.
-    assert post(
-        browser,
-        "deposit",
-        id="deposit1",
-        bank="Sample",
-        currency="UAH",
-        principal="1000",
-        opened_on="2026-01-01",
-        matures_on="2027-06-01",
-        annual_rate="0.10",
-    ).status_code == 303
-    assert post(
-        browser,
-        "payment",
-        id="interest1",
-        holding_id="deposit1",
-        kind="interest",
-        due_on="2027-03-01",
-        expected="80",
-    ).status_code == 303
+    assert (
+        post(
+            browser,
+            "deposit",
+            id="deposit1",
+            bank="Sample",
+            currency="UAH",
+            principal="1000",
+            opened_on="2026-01-01",
+            matures_on="2027-06-01",
+            annual_rate="0.10",
+        ).status_code
+        == 303
+    )
+    assert (
+        post(
+            browser,
+            "payment",
+            id="interest1",
+            holding_id="deposit1",
+            kind="interest",
+            due_on="2027-03-01",
+            expected="80",
+        ).status_code
+        == 303
+    )
 
     initially = outlook_html(browser, "2027-03-03")
     assert "Ожидаемый доход к дате" in initially
     assert "Потенциально" in initially
     assert "180" in initially
 
-    assert post(
-        browser, "receipt", payment_id="interest1", amount="50", received_on="2027-03-02"
-    ).status_code == 303
+    assert (
+        post(
+            browser, "receipt", payment_id="interest1", amount="50", received_on="2027-03-02"
+        ).status_code
+        == 303
+    )
     unposted = outlook_html(browser, "2027-03-03")
     assert "Получено, не зачислено" in unposted
     assert "180" in unposted
@@ -204,13 +236,16 @@ def test_outlook_is_read_only_and_tracks_explicit_credit(browser):
         saved = repo.list_receipts("interest1")
         assert len(saved) == 1
         assert repo.balances_on(date(2027, 3, 3))["bank"] == money("100")
-    assert post(
-        browser,
-        "credit",
-        payment_id="interest1",
-        receipt_id=saved[0].id,
-        account_id="bank",
-    ).status_code == 303
+    assert (
+        post(
+            browser,
+            "credit",
+            payment_id="interest1",
+            receipt_id=saved[0].id,
+            account_id="bank",
+        ).status_code
+        == 303
+    )
     credited = outlook_html(browser, "2027-03-03")
     assert "180" in credited
     with SQLiteCashRepository(db) as repo:
