@@ -20,6 +20,12 @@ This file tracks **technical conventions and edge cases** to decide in the small
 | Backup and recovery | Frequency, retention, target directory and atomic snapshot/restore procedure for SQLite, including integrity test. | Regular local backup, manual export and restore and verified recovery; no requirement for cloud upload. |
 | Financial rounding | Currency-specific posting precision, instrument-specific fractional quantities and display precision, including error tolerance for exponential calculations. | Use Decimal; do not round arbitrary intermediates or equate 0 with unknown. |
 
+## Future module: bank statement analysis
+
+The user has requested a planned **bank statement analysis capability** for identifying possibly unjustified spending and missed financial opportunities. The [Statement Analysis architecture](statement-analysis.md) defines a separate read-only import/normalization/deduplication/matching/analytics pipeline. The current MVP's manual snapshot and Q01–Q16 remain unchanged.
+
+Before a future implementation PR, agree on the first import format/bank export, optional bank-account linkage, categories and personal budget thresholds, original-statement retention/encryption, analysis intervals, and which hypothetical opportunity scenarios are useful. These details are **not prerequisites for the MVP**. Local processing, evidence for every finding and user review are the default; no automatic financial operations or statement upload to AI services.
+
 ## Explicitly deferred features
 
 - Official APIs for FX, market prices, inflation and securities data; manual entry and offline operation remain available when adapters arrive.
