@@ -93,17 +93,15 @@ def cash_outlook(
 
     result = []
     for currency, row in sorted(totals.items()):
-        def make(amount: Decimal) -> Money:
-            return Money(amount, currency)
         potential = row["actual"] + row["uncredited"] + row["income"] + row["principal"]
         result.append(
             CashOutlook(
                 currency=currency,
-                actual_cash=make(row["actual"]),
-                uncredited=make(row["uncredited"]),
-                expected_income=make(row["income"]),
-                expected_principal=make(row["principal"]),
-                potential_cash=make(potential),
+                actual_cash=Money(row["actual"], currency),
+                uncredited=Money(row["uncredited"], currency),
+                expected_income=Money(row["income"], currency),
+                expected_principal=Money(row["principal"], currency),
+                potential_cash=Money(potential, currency),
             )
         )
     return tuple(result)
