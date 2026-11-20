@@ -28,20 +28,21 @@ The installed `fin` command is equivalent to `python -m fin`. It only reports sc
    .venv/bin/python -m pip install -e ".[dev]"
    ```
 
-3. From the VS Code menu choose **Terminal → Run Task…** (or **Ctrl+Shift+P → Tasks: Run Task**):
-   - **Fin: Run** — launch the current CLI scaffold (`python -m fin`). It does **not** start a web server yet.
-   - **Fin: Tests** — run `pytest -v`. It is also the default VS Code **Run Test Task**.
-4. Read the output in VS Code's integrated terminal. A nonzero exit code means the task failed; fix and rerun before PR review.
+3. From **Terminal → Run Task…** (or **Ctrl+Shift+P → Tasks: Run Task**) choose a project task:
+   - **Fin: Run** — launch the current CLI scaffold (`python -m fin`), not a web server.
+   - **Fin: Tests** — run `pytest -v`, also the default **Run Test Task**.
+   - **Fin: Ruff Check** — run `ruff check .` (lint).
+   - **Fin: Ruff Format Check** — run `ruff format --check .` (non-mutating format verification).
+   - **Fin: Ruff Format** — run `ruff format .` to format files.
+   - **Fin: Check** — run lint, format check, and tests sequentially; also the default **Run Build Task** (`Ctrl+Shift+B`).
+   - **Fin: Setup** — create the local `.venv` if missing; **Fin: Install** — install/update `.[dev]` into it.
+4. Read results in the integrated terminal. **Fin: Check** should pass before opening or merging a PR.
 
-All VS Code project configuration lives in **`fin.code-workspace`**: the Python interpreter (`.venv/bin/python`), pytest discovery, and **Fin: Run / Fin: Tests** tasks. There is no separate `.vscode/tasks.json`. Open this workspace file to load the tasks. If VS Code reports a missing `.venv/bin/python`, repeat step 2. Task commands don't need `source` activation.
+All shared VS Code project settings and tasks live in **`fin.code-workspace`** (not `.vscode/tasks.json`). Open that workspace in WSL. Task commands use `.venv/bin/python` and `.venv/bin/ruff` explicitly, so shell activation is unnecessary. If those executables are missing, first run **Fin: Setup**, then **Fin: Install**.
 
 ## Checks before a PR
 
-```bash
-ruff check .
-ruff format --check .
-python -m pytest -v
-```
+Run **Fin: Check** (or `Ctrl+Shift+B`) in VS Code. It executes the same lint, format-check, and pytest commands used by GitHub Actions.
 
 GitHub Actions runs the same checks with Python 3.12 and 3.13 for pull requests targeting `master`. Keep real account data, statements, tokens and credentials out of the repository, tests and PR descriptions.
 
@@ -51,6 +52,6 @@ GitHub Actions runs the same checks with Python 3.12 and 3.13 for pull requests 
 - `tests/` — automated smoke tests; later tests will cover money, dates, FX and investments.
 - `docs/` — approved financial rules and future modules.
 - `.github/workflows/ci.yml` — lint, formatting and test checks.
-- `fin.code-workspace` — single source of truth for VS Code settings, WSL Python interpreter, pytest discovery, run/test tasks.
+- `fin.code-workspace` — single source of truth for VS Code settings, WSL Python interpreter, pytest discovery, run/test/lint/format/setup tasks.
 
 Development flow: small feature branch → Draft PR → automated checks and manual review → user-controlled squash merge. Do not commit `.venv`, generated files or private financial data.

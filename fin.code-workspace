@@ -55,6 +55,121 @@
           "panel": "dedicated",
           "clear": true
         }
+      },
+      {
+        "label": "Fin: Ruff Check",
+        "type": "shell",
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated",
+          "clear": true
+        },
+        "command": "${workspaceFolder}/.venv/bin/ruff",
+        "args": [
+          "check",
+          "."
+        ]
+      },
+      {
+        "label": "Fin: Ruff Format Check",
+        "type": "shell",
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated",
+          "clear": true
+        },
+        "command": "${workspaceFolder}/.venv/bin/ruff",
+        "args": [
+          "format",
+          "--check",
+          "."
+        ]
+      },
+      {
+        "label": "Fin: Ruff Format",
+        "type": "shell",
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated",
+          "clear": true
+        },
+        "command": "${workspaceFolder}/.venv/bin/ruff",
+        "args": [
+          "format",
+          "."
+        ]
+      },
+      {
+        "label": "Fin: Setup",
+        "type": "shell",
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated",
+          "clear": true
+        },
+        "command": "python3",
+        "args": [
+          "-m",
+          "venv",
+          ".venv"
+        ],
+        "detail": "Create .venv (first run), then use Fin: Install to install the dev dependencies"
+      },
+      {
+        "label": "Fin: Install",
+        "type": "shell",
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated",
+          "clear": true
+        },
+        "command": "${workspaceFolder}/.venv/bin/python",
+        "args": [
+          "-m",
+          "pip",
+          "install",
+          "-e",
+          {
+            "value": ".[dev]",
+            "quoting": "strong"
+          }
+        ],
+        "detail": "Install Fin and dev dependencies into the local environment"
+      },
+      {
+        "label": "Fin: Check",
+        "dependsOn": [
+          "Fin: Ruff Check",
+          "Fin: Ruff Format Check",
+          "Fin: Tests"
+        ],
+        "dependsOrder": "sequence",
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        },
+        "problemMatcher": [],
+        "detail": "Run lint, format check, and tests before a PR"
       }
     ]
   }
