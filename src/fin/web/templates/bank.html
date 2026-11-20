@@ -194,12 +194,12 @@
       <p class="small"><strong>План:</strong> ожидаемый купон (проценты по ОВГЗ), проценты депозита или возврат тела в конкретную дату.
       <strong>Факт:</strong> сумма, действительно поступившая из банка. Для одного выпуска ОВГЗ несколько купонов = несколько отдельных строк. Название coupon_march придумывать не нужно — внутренние ID генерируются автоматически.</p>
       {% if payments %}
-      <div class="scroll"><table><thead><tr><th>Конкретная инвестиция</th><th>Дата</th><th>Тип</th><th>План</th><th>Факт</th><th>Остаток</th><th>Состояние</th></tr></thead>
+      <div class="scroll"><table><thead><tr><th>Конкретная инвестиция</th><th>Дата</th><th>Тип</th><th>План</th><th>Факт</th><th>Отклонение</th><th>Остаток</th><th>Состояние</th></tr></thead>
       <tbody>{% for p in payments %}<tr>
         <td>{{ p.holding_label }}</td><td>{{ p.due }}</td>
         <td>{{ {'coupon':'Купон ОВГЗ','interest':'Проценты депозита','principal':'Погашение тела'}.get(p.kind,p.kind) }}</td>
         <td class="num">{{ p.expected.amount|amount }} {{ p.expected.currency }}</td>
-        <td class="num">{{ p.received.amount|amount }}</td><td class="num">{{ p.outstanding.amount|amount }}</td>
+        <td class="num">{{ p.received.amount|amount }}</td><td class="num">{{ (p.received.amount - p.expected.amount)|amount }}</td><td class="num">{{ p.outstanding.amount|amount }}</td>
         <td>{{ {'expected':'Ожидается','partial':'Частично','overdue':'Просрочено','paid':'Выплачено'}.get(p.status,p.status) }}
           <details><summary>Изменить план</summary>
             <form method="post" action="/bank/edit_payment">{{ token() }}
@@ -213,7 +213,7 @@
           </details>
         </td></tr>
         {% for item in p.receipts %}<tr class="subrow"><td colspan="2">↳ Реально получено {{ item.item.received_on }}</td>
-          <td colspan="3" class="num">{{ item.item.amount.amount|amount }} {{ item.item.amount.currency }}</td>
+          <td colspan="4" class="num">{{ item.item.amount.amount|amount }} {{ item.item.amount.currency }}</td>
           <td colspan="2">{% if item.posted %}Зачислено на счёт
             {% elif opening %}
             <form method="post" action="/bank/credit">{{ token() }}
@@ -253,7 +253,7 @@
           <div class="grid">
             <label>Какая выплата<select name="payment_id">{% for p in payments %}<option value="{{ p.id }}" {{ chosen('receipt','payment_id',p.id) }}>{{ p.holding_label }} · {{ p.due }} · {{ p.expected.amount|amount }} {{ p.expected.currency }}</option>{% endfor %}</select></label>
             <label>Когда пришли<input type="date" name="received_on" value="{{ prior('receipt','received_on') }}" required></label>
-            <label>Фактически пришло<input name="amount" value="{{ prior('receipt','amount') }}" required></label>
+            <label>Фактически пришло (может отличаться от плана)<input name="amount" value="{{ prior('receipt','amount') }}" required></label>
           </div><button>Записать поступление</button>
           <p class="small">После записи нажми «Зачислить на» у поступления. Пока не зачислено, реальные остатки не изменятся.</p>
         </form>
