@@ -2,7 +2,7 @@
 
 Single-user, offline-first personal finance app for Windows and Linux. The planned MVP contains **Bank** and **Overview**; see [MVP requirements](docs/mvp.md) and the [domain model](docs/domain-model.md).
 
-**Current state:** Python scaffold, exact `Money`, and tested Bank domain records for bonds, deposits and planned/actual payments. No live balance ledger, FX engine, database or web UI yet. Future investment calculators and statement analysis are documented under `docs/`.
+**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank persistence v1**. No live cash ledger, FX engine or web UI yet. Future investment calculators and statement analysis are documented under `docs/`.
 
 ## Development with Windows + WSL (Ubuntu) + VS Code
 
@@ -95,3 +95,24 @@ The pure, offline `fin.domain.bank` module introduces:
 A coupon never reduces principal, a maturity date does not imply an extra coupon, and a planned payment is **not** booked cash. Cost basis is not market value. Receipt overpayments and duplicate IDs are rejected pending a later explicit reconciliation mechanism. No automatic reinvestment, interest generation or tax calculations.
 
 Run **Fin: Check** in `fin.code-workspace` before review. SQLite storage, account movements and valuations are separate future PRs.
+
+## SQLite Bank persistence
+
+`fin.persistence.SQLiteBankRepository` saves bond instruments/lots, deposits, explicit scheduled payments and confirmed receipts in a local SQLite file. It creates **schema version 1** on first open, preserves data when reopened, rejects unsupported future versions and enables foreign keys on every connection. `Decimal` amounts are stored as **TEXT**, not floating-point SQLite REAL. Unknown purchase prices/fees stay `NULL`, not zero.
+
+```python
+from pathlib import Path
+
+from fin.persistence import SQLiteBankRepository
+
+Path("data").mkdir(exist_ok=True)
+with SQLiteBankRepository(Path("data/fin.sqlite3")) as repository:
+    assert repository.schema_version() == 1
+    # repository.add_bond_lot(lot)
+    # repository.add_payment(scheduled_payment)
+    # repository.add_receipt(actual_receipt)
+```
+
+Create the parent directory before opening a file-based database. Files under `data/` and `*.sqlite3` / `*.db` are excluded from Git. Use the existing **Fin: Check** VS Code task (`Ctrl+Shift+B`): there is no separate install command or third-party DB dependency.
+
+Schema migrations run in a single transaction; each repository write is atomic. This is **storage of contracts and receipts**, not a ledger that automatically credits account balances. The opening snapshot, ledger, backup/restore and UI arrive in later PRs. Do not delete the SQLite database with `git clean -fdx` or similar cleanup commands.

@@ -14,3 +14,10 @@ __pycache__/
 
 .DS_Store
 Thumbs.db
+
+# Local private finance databases and their journal/WAL companions
+/data/
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
