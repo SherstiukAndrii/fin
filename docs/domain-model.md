@@ -12,11 +12,11 @@ All product choices **Q01–Q16 are approved**. Details labeled *implementation 
 | Account | Stable ID, name, cash or bank account category, native currency, accessible/unavailable balance information. |
 | Opening snapshot | Selected calendar date, per-account closing balances, existing investment positions (with remaining cost basis and quantity), and outstanding liabilities. History before this date is not replayed into cash. |
 | Monthly control snapshot | Date and observed account/portfolio balances. Compare with calculated values; differences generate explicit, auditable correction events. It does not silently replace earlier entries. |
-| Bond instrument | Identifier/ISIN, denomination, currency, maturity and contract terms. Many lots may reference one instrument. |
-| Bond lot | Instrument reference, acquisition date, integer quantity, unit price, paid fees, acquisition currency/cost basis and remaining quantity; supports coupon and principal schedules. |
+| Bond instrument | Identifier/ISIN, denomination, currency, maturity and contract terms. An instrument may have **multiple dated coupon obligations before maturity** and, where applicable, partial principal repayments. Many lots may reference one instrument. |
+| Bond lot | Instrument reference, acquisition date, integer quantity, unit price, paid fees, acquisition currency/cost basis and remaining quantity. It is entitled to **every applicable dated coupon** and applicable principal payments for its quantity. Do not assume one coupon only or a single maturity cash flow. |
 | Deposit | Stable ID, bank, currency, original principal, dates, interest terms, payment schedule, and remaining principal/cost basis. |
 | Liability | Stable ID, creditor/type, native currency, remaining principal and obligations accrued as of a dated assessment, with any separately planned future payments. |
-| Payment obligation | Stable ID linked to a holding, expected date, amount, currency and type: coupon, interest, principal or redemption. |
+| Payment obligation | Stable ID linked to a holding, expected date, amount, currency and type: coupon, interest, principal or redemption. **One holding has many obligations**, e.g. several coupon dates and a separate maturity/redemption. Record whether a quoted amount is per bond/unit or for the entire lot; materialize the payable lot amount exactly once. |
 | Actual receipt | Stable ID linked to a payment obligation, actual date and amount/currency. Many partial receipts may settle one obligation; unreceived balance remains expected/overdue. |
 | Dated event | Stable ID, effective date, type, origin, native currency/amount, affected accounts and/or holdings. Includes purchases, contributions, transfers, repayments, realized trades, corrections and one-off cash flows. |
 | Price observation | Asset ID, value, currency/unit, observation date, source (manual in MVP), optional explanatory note. Purchase cost is separate. |
@@ -48,7 +48,7 @@ Monthly control snapshots serve as verification. A discrepancy is shown before a
 | --- | --- | --- | --- |
 | Bond purchase after opening date | Debit purchase amount and paid fees when confirmed | Debit if scheduled | Increase purchased lot and its cost basis |
 | Deposit opening after opening date | Debit deposited principal when confirmed | Debit if scheduled | Create/increase deposited principal |
-| Expected coupon/interest | No change until receipt | Forecast payment at expected date | No principal reduction |
+| Expected coupon/interest | No change until receipt | Credit each independently scheduled coupon/interest at its own date; **several coupons can precede maturity** | No principal or acquisition-cost reduction; no change in bond quantity |
 | Partial actual coupon/interest | Credit amount actually received on actual date | Reconcile with scheduled obligation | Outstanding expected amount decreases; remainder may be overdue |
 | Principal repayment/redemption | Credit actual receipt when received | Credit scheduled principal on expected date | Decrease outstanding principal/quantity/cost basis; avoid double-counting redemption as investment income |
 | Sale of investment | Credit realized net proceeds when settled | Only if explicitly planned | Reduce position; realized result comes from net proceeds minus attributed cost |
@@ -56,6 +56,10 @@ Monthly control snapshots serve as verification. A discrepancy is shown before a
 | One-off expense/income | Actual only upon confirmation | Planned amount on scheduled date | Change cash, not investment yield by default |
 | Liability payment | Debit when paid | Planned future debit if scheduled | Reduce principal/accrual as allocated, with interest/charges separately |
 | Own-account transfer | Debit and credit own accounts | Same if planned | No new wealth |
+
+**Multiple coupon obligations:** A single OVGZ lot can have zero, one, or many coupon payment dates before its maturity. Maintain a separate schedule entry for each payment, including amount, currency, payment type, date and link to the instrument/lot. The instrument schedule may be per security, while the lot's claim multiplies a per-security amount by its eligible quantity; prevent applying that multiplication twice. A coupon changes forecast cash on its scheduled date (or actual cash only on receipt), and never releases the bond's principal or acquisition cost. Amortizing principal is a different event type; it reduces outstanding principal and releases the corresponding cost basis. A final redemption is separate and occurs once.
+
+**Test illustration:** Holding **2 OVGZ** of **1,000 UAH nominal each**, with **40 UAH coupons per bond** due **March 1, June 1 and September 1**, and **principal redemption December 1**, produces three distinct scheduled coupon entries of **80 UAH** each (**240 UAH total**), plus a single **2,000 UAH principal** event. The three coupons do not reduce principal; actual receipts may occur late or partially. No additional coupon is inferred on the maturity date unless the schedule explicitly includes one.
 
 After a holding matures, its returned principal remains cash until the user **explicitly** creates a reinvestment transaction; do not roll it into a new instrument automatically.
 
@@ -129,6 +133,6 @@ Display **Total Nominal and Total Real side by side**; they are views of one cap
 - Store the **source and observation date for each price and FX value**. In the MVP all observations and terms are manual. Optional official-source adapters may later supply data without replacing historical observations or breaking offline calculations. Price-staleness thresholds vary by asset class and will be configured when the relevant pricing module is implemented.
 - Preserve immutable event IDs, valid references and histories; prevent duplicate application of cash flows. A snapshot and its corrections must be independently inspectable.
 - Back up SQLite regularly to local storage, permit manual export and restoration, and test integrity after restoration. Bind the web process to localhost by default; VPN access and authentication are later work.
-- Tests should cover currencies, snapshots, post-snapshot purchase/deposit debits, scheduled/partial/late receipts, principal-versus-profit separation, no automatic reinvestment, Free tiers and selling costs, dated FX/staleness, missing values, Fire periods, real-versus-nominal values and monthly reconciliation.
+- Tests should cover currencies, snapshots, post-snapshot purchase/deposit debits, **multiple coupons before an OVGZ's redemption and independent coupon/principal schedules**, scheduled/partial/late receipts, principal-versus-profit separation, no automatic reinvestment, Free tiers and selling costs, dated FX/staleness, missing values, Fire periods, real-versus-nominal values and monthly reconciliation.
 
 Unresolved **technical parameters** (not unapproved Q01–Q16 choices) are tracked in [implementation details](open-questions.md).
