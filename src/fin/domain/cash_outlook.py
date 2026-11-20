@@ -93,7 +93,8 @@ def cash_outlook(
 
     result = []
     for currency, row in sorted(totals.items()):
-        make = lambda amount: Money(amount, currency)
+        def make(amount: Decimal) -> Money:
+            return Money(amount, currency)
         potential = row["actual"] + row["uncredited"] + row["income"] + row["principal"]
         result.append(
             CashOutlook(
