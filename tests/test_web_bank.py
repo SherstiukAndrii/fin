@@ -373,3 +373,13 @@ def test_money_formatter_groups_and_abbreviates_without_losing_value():
     assert _format_amount(1200) == "1 200 (1.2 тыс.)"
     assert _format_amount(1200000000) == "1 200 000 000 (1.2 млрд)"
     assert _format_amount(Decimal("123456.789")) == "123 456.789 (123 тыс.)"
+
+
+def test_csp_permits_same_origin_ajax_form_requests(bank_ui):
+    client, _, _ = bank_ui
+    page = client.get("/bank")
+    csp = page.headers["content-security-policy"]
+    assert "default-src 'none'" in csp
+    assert "connect-src 'self'" in csp
+    assert "form-action 'self'" in csp
+    assert "frame-ancestors 'none'" in csp
