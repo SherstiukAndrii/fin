@@ -422,6 +422,10 @@ def test_inline_actual_receipt_can_differ_from_plan_and_show_variance(bank_ui):
     assert "<th>Отклонение</th>" in page.text
     assert "<summary>Записать факт</summary>" in page.text
     assert 'name="payment_id" value="interest-inline"' in page.text
+    assert (
+        '<label>Дата поступления<input type="date" name="received_on" '
+        'value="2027-03-01" required>' in page.text
+    )
     assert 'name="amount" value="80"' in page.text
 
     assert (
