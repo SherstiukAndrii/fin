@@ -38,6 +38,7 @@ from fin.domain.cash_outlook import cash_outlook
 from fin.domain.money import Money
 from fin.domain.securities_import import parse_securities_pdf
 from fin.persistence import SQLiteCashRepository
+from fin.persistence.deletions import sign_deletion, verify_deletion
 from fin.web.import_preview import sign_preview, verify_preview
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -536,6 +537,7 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
         suggested.isoformat() if opening is not None and suggested > opening.as_of else ""
     )
     imported_positions = repo.securities_positions_on(as_of)
+    imported_entries = repo.list_securities_entries()
     confirmed_keys = {
         (position["isin"], position["custodian"].strip().casefold())
         for position in imported_positions
@@ -609,6 +611,7 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
         "investment_rows": tuple(investment_rows),
         "matched_manual": tuple(matched_manual),
         "imported_positions": imported_positions,
+        "imported_entries": imported_entries,
         "security_nominal_totals": tuple(sorted(security_nominal_totals.items())),
         "payments": payments,
         "events": tuple(reversed(events[-30:])),
@@ -629,6 +632,7 @@ def create_app(db_path: str | Path) -> FastAPI:
     token = secrets.token_urlsafe(32)
     app.state.csrf_token = token
     import_secret = secrets.token_bytes(32)
+    delete_secret = secrets.token_bytes(32)
 
     @app.middleware("http")
     async def private_headers(request: Request, call_next):
@@ -657,6 +661,8 @@ def create_app(db_path: str | Path) -> FastAPI:
         schedule_rows: tuple[dict[str, str], ...] = (),
         import_preview: tuple = (),
         import_token: str = "",
+        delete_plan=None,
+        delete_token: str = "",
         status_code: int = 200,
     ) -> HTMLResponse:
         """Redisplay the full page with safe, previously entered fields on errors."""
@@ -674,6 +680,7 @@ def create_app(db_path: str | Path) -> FastAPI:
                 "investment_rows": (),
                 "matched_manual": (),
                 "imported_positions": (),
+                "imported_entries": (),
                 "security_nominal_totals": (),
                 "payments": (),
                 "events": (),
@@ -699,6 +706,8 @@ def create_app(db_path: str | Path) -> FastAPI:
                 "schedule_rows": schedule_rows,
                 "import_preview": import_preview,
                 "import_token": import_token,
+                "delete_plan": delete_plan,
+                "delete_token": delete_token,
             },
             status_code=status_code,
         )
@@ -710,6 +719,77 @@ def create_app(db_path: str | Path) -> FastAPI:
         except ValueError:
             return HTMLResponse("Invalid evaluation date", status_code=422)
         return render_bank(request, selected)
+
+    @app.post("/bank/delete/preview", response_class=HTMLResponse)
+    async def preview_delete(request: Request):
+        """Show exact dependent records and cash effects before any deletion."""
+        form = await request.form()
+        supplied = form.get("csrf")
+        if not isinstance(supplied, str) or not secrets.compare_digest(supplied, token):
+            return HTMLResponse("Forbidden", status_code=403)
+        if not db_path.is_file():
+            return HTMLResponse("Initialize the database first: fin db init", status_code=409)
+        raw_date = request.query_params.get("as_of")
+        try:
+            as_of = date.fromisoformat(raw_date) if raw_date else date.today()
+        except ValueError:
+            return HTMLResponse("Invalid evaluation date", status_code=422)
+        try:
+            with SQLiteCashRepository(db_path) as repo:
+                plan = repo.plan_delete(_field(form, "kind"), _field(form, "identifier"))
+            return render_bank(
+                request,
+                as_of,
+                delete_plan=plan,
+                delete_token=sign_deletion(plan, delete_secret),
+            )
+        except (ValueError, TypeError, sqlite3.Error) as exc:
+            return render_bank(request, as_of, form_error=str(exc), status_code=422)
+
+    @app.post("/bank/delete/confirm", response_class=HTMLResponse)
+    async def confirm_delete(request: Request):
+        """Explicit typed confirmation; backup first; verify current DB fingerprint."""
+        form = await request.form()
+        supplied = form.get("csrf")
+        if not isinstance(supplied, str) or not secrets.compare_digest(supplied, token):
+            return HTMLResponse("Forbidden", status_code=403)
+        if not db_path.is_file():
+            return HTMLResponse("Initialize the database first: fin db init", status_code=409)
+        raw_date = request.query_params.get("as_of")
+        try:
+            as_of = date.fromisoformat(raw_date) if raw_date else date.today()
+        except ValueError:
+            return HTMLResponse("Invalid evaluation date", status_code=422)
+        try:
+            if _field(form, "confirmation") != "УДАЛИТЬ":
+                raise ValueError("Для удаления напиши УДАЛИТЬ полностью")
+            kind, identifier, digest = verify_deletion(
+                _field(form, "deletion_token"), delete_secret
+            )
+            with SQLiteCashRepository(db_path) as repo:
+                reviewed = repo.plan_delete(kind, identifier)
+            if not secrets.compare_digest(reviewed.digest, digest):
+                raise ValueError("Данные изменились. Сначала проверь удаление заново.")
+            _backup_before_edit(db_path)
+            with SQLiteCashRepository(db_path) as repo:
+                repo.delete_with_plan(kind, identifier, digest)
+            anchors = {
+                "account": "accounts",
+                "opening": "accounts",
+                "cash_event": "events",
+                "control": "monthly-controls",
+                "holding": "holdings",
+                "payment": "payments",
+                "receipt": "payments",
+                "securities_import": "imported-securities",
+                "import_position": "holdings",
+            }
+            return RedirectResponse(
+                f"/bank?as_of={as_of.isoformat()}#{anchors[kind]}",
+                status_code=303,
+            )
+        except (ValueError, TypeError, sqlite3.Error, OSError) as exc:
+            return render_bank(request, as_of, form_error=str(exc), status_code=422)
 
     @app.post("/bank/securities/preview", response_class=HTMLResponse)
     async def preview_securities(request: Request):

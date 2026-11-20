@@ -21,6 +21,11 @@ from fin.domain.accounts import (
 )
 from fin.domain.money import CurrencyMismatchError, Money
 from fin.domain.monthly_control import MonthlyControl, MonthlyControlBalance, is_month_end
+from fin.persistence.deletions import (
+    DeletionPlan,
+    execute_deletion,
+    plan_deletion,
+)
 from fin.persistence.sqlite_bank import SQLiteBankRepository
 
 
@@ -37,6 +42,14 @@ class SQLiteCashRepository(SQLiteBankRepository):
 
     def __init__(self, path: str | Path) -> None:
         super().__init__(path)
+
+    def plan_delete(self, kind: str, identifier: str) -> DeletionPlan:
+        """Preview dependencies without modifying data."""
+        return plan_deletion(self._db, kind, identifier)
+
+    def delete_with_plan(self, kind: str, identifier: str, expected_digest: str) -> DeletionPlan:
+        """Delete only after a signed user review; one SQLite transaction."""
+        return execute_deletion(self._db, kind, identifier, expected_digest)
 
     def update_account(self, account: CashAccount) -> None:
         """Display name / kind may change; account ID/currency cannot."""
