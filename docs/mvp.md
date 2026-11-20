@@ -2,7 +2,7 @@
 
 Fin is a single-user, local, offline-first financial web application. The first version has **Bank** (holdings and payment records) and **Overview** (liquidity, net worth and projections). Windows/Linux browsers are supported through a locally running application. The prototype spreadsheet *Babki* informs workflow and presentation only, not the application schema or formulas.
 
-The [domain model](domain-model.md) is normative for records, calculations and invariants. [Implementation details](open-questions.md) lists still-unresolved technical parameters. **All financial decisions Q01–Q16 have been approved**; they are not open questions. The [future Statement Analysis architecture](statement-analysis.md) keeps bank-statement import and spending/opportunity analytics separate from the current MVP ledger.
+The [domain model](domain-model.md) is normative for records, calculations and invariants. [Implementation details](open-questions.md) lists still-unresolved technical parameters. **All financial decisions Q01–Q16 have been approved**; they are not open questions. The [Investment Calculators architecture](investment-calculators.md) provides a modular path for OVGZ, shares/ETF, deposits and other assets, with future optional online data providers. The [future Statement Analysis architecture](statement-analysis.md) keeps bank-statement import and spending/opportunity analytics separate from the current MVP ledger.
 
 ## Bank — record positions and payments
 
@@ -43,6 +43,14 @@ The [domain model](domain-model.md) is normative for records, calculations and i
 - Use local SQLite; provide **regular local backups**, explicit manual export/restore and a tested restore/integrity path. Keep the service bound to localhost by default; remote access via the user's private VPN and authentication is a separate phase. Never put real balances or credentials in public Issues/PRs.
 - Use `Decimal` for financial calculations and retain intermediate precision. Apply rounding when a real cash flow is posted or for currency/instrument-specific display; do not store all instruments as two-decimal `float` values. Distinguish zero, unknown, missing and invalid inputs.
 - Automation of bank accounts, broker data, public pricing, cloud sync and historical CSV/XLSX import are **outside the first MVP**. The first dataset is entered as a manual snapshot.
+
+## Planned extension — investment calculators and online data
+
+- Reserve a **calculator service independent of Bank/Overview** for scenario comparison of OVGZ and other bonds, stocks/ETF, deposits and generic other investments. Manual bond/deposit calculations may be implemented in separate PRs as Bank features; advanced equity and other assets are staged extensions, not new mandatory features of the first MVP.
+- **OVGZ:** calculate purchase outlay, dirty/clean pricing conventions, full dated coupon and principal schedule, gross/net proceeds, holding-to-maturity yield when valid, and sale-vs-hold scenarios; do not collapse multiple coupons or infer actual retail prices from auction results.
+- **Stocks/ETF:** current valuation, weighted invested cost, realized/unrealized gains, net dividends, splits/corporate actions and scenarios without inventing guaranteed future dividends or price growth. Other assets reuse a generic dated cash-flow engine with type-specific rules.
+- Provide optional *read-only*, provider-specific market-data adapters with caching, source/observation date, quote type, refresh status and manual override. Candidate data: official NBU OVGZ securities reference (ISIN/coupon dates), NBU FX, NBU auction results, licensed equity/ETF market prices; external calls must never block offline calculations. See [Investment Calculators architecture](investment-calculators.md).
+- Calculator scenarios must not change real account balances or add Fire to Total; creating an actual holding requires a separate confirmed transaction.
 
 ## Planned extension — bank statements and spending intelligence
 
