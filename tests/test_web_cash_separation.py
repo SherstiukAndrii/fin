@@ -44,7 +44,7 @@ def test_cash_uses_separate_creation_and_distinct_display(browser):
     assert 'id="cash-on-hand"' in page.text
     assert 'action="/bank/account"' in page.text
     assert 'action="/bank/cash"' in page.text
-    assert "<summary>+ Добавить наличные</summary>" in page.text
+    assert '<summary class="entrypoint">+ Добавить наличные</summary>' in page.text
 
     assert_saved(client, "account", name="Fictional Bank", kind="bank", currency="UAH")
     assert_saved(client, "cash", currency="UAH")
