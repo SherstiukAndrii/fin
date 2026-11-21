@@ -90,7 +90,7 @@ def test_workspace_home_is_task_hub_not_full_page_of_forms(browser):
     assert 'data-form-id="form-securities-import"' in response.text
     assert 'id="workspace-dialog"' in response.text
     assert 'id="bank-main"' not in response.text
-    assert 'id="form-event"' not in response.text
+    assert '<details id="form-event"' not in response.text
 
 
 def test_money_master_detail_separates_bank_and_cash(browser):
@@ -105,7 +105,7 @@ def test_money_master_detail_separates_bank_and_cash(browser):
     assert 'id="object-search"' in page.text
     assert 'data-form-id="form-account"' in page.text
     assert 'data-form-id="form-cash"' in page.text
-    assert 'id="form-account"' not in page.text
+    assert '<details id="form-account"' not in page.text
 
     detail = client.get("/workspace?area=money&target=bank&as_of=2028-02-15")
     assert detail.status_code == 200

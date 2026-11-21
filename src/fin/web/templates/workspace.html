@@ -189,7 +189,7 @@
               <a class="object-row {% if selected_event and selected_event.id == event.id %}selected{% endif %}"
                 href="/workspace?area=activity&target={{ event.id|urlencode }}&as_of={{ as_of.isoformat() }}">
                 <span class="object-avatar activity">⇄</span><span class="object-copy"><strong>{{ event.effective_on.strftime('%d.%m.%Y') }}</strong><small>{{ event.kind.value }}</small></span>
-                <span class="object-number">{% for leg in event.legs %}{{ leg.amount.amount|amount }} {{ leg.amount.currency }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
+                <span class="object-number">{% for leg in event.legs %}{{ leg.change.amount|amount }} {{ leg.change.currency }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
               </a>
             {% endfor %}
           {% else %}
@@ -275,7 +275,7 @@
             <h2>{{ selected_event.effective_on.strftime('%d.%m.%Y') }}</h2>
             <p class="detail-footnote">{{ selected_event.kind.value }}</p>
             {% for leg in selected_event.legs %}
-              <div class="event-leg"><strong>{{ account_labels.get(leg.account_id, leg.account_id) }}</strong><span>{{ leg.amount.amount|amount }} {{ leg.amount.currency }}</span></div>
+              <div class="event-leg"><strong>{{ account_labels.get(leg.account_id, leg.account_id) }}</strong><span>{{ leg.change.amount|amount }} {{ leg.change.currency }}</span></div>
             {% endfor %}
             <div class="inspector-actions">
               {% if not selected_event.receipt_id %}{{ edit('Редактировать', '/bank/edit_event', selected_event.id, 'events') }}{% endif %}
