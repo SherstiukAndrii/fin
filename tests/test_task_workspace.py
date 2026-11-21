@@ -194,11 +194,11 @@ def test_unknown_workspace_and_invalid_date_rejected(browser):
 def test_workspace_assets_and_security_controls_are_local(browser):
     client, _ = browser
     page = client.get("/bank")
-    css = client.get("/assets/bank.css")
-    js = client.get("/assets/bank.js")
+    css = client.get("/assets/workspace.css")
+    js = client.get("/assets/workspace.js")
     assert page.status_code == css.status_code == js.status_code == 200
-    assert 'href="/assets/bank.css"' in page.text
-    assert 'src="/assets/bank.js"' in page.text
+    assert 'href="/assets/workspace.css"' in page.text
+    assert 'src="/assets/workspace.js"' in page.text
     assert 'meta name="fin-csrf"' in page.text
     assert 'href="/bank?' in page.text
     assert "master-detail" in css.text
@@ -227,7 +227,9 @@ def test_bank_is_the_only_primary_ui_and_form_source_is_internal(browser):
     assert 'src="/assets/bank.js"' not in forms.text
     assert client.get("/assets/bank.css").status_code == 404
     assert client.get("/assets/bank.js").status_code == 404
-    assert "Imaginary Bank" in bank.text
+    money = client.get("/bank?area=money&target=bank&as_of=2028-02-15")
+    assert money.status_code == 200
+    assert "Imaginary Bank" in money.text
 
 
 def test_setup_uses_real_prerequisites_instead_of_broken_action_buttons(tmp_path):

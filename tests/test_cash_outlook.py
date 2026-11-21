@@ -176,7 +176,7 @@ def post(browser, action: str, **fields):
 
 def outlook_html(browser, day: str) -> str:
     client, _, _ = browser
-    page = client.get(f"/bank?as_of={day}")
+    page = client.get(f"/bank/forms?as_of={day}")
     assert page.status_code == 200
     return page.text.split('<section class="card" id="cash-outlook">', 1)[1].split("</section>", 1)[
         0
