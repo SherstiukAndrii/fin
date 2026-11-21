@@ -141,7 +141,7 @@ def test_security_policy_allows_local_css_without_external_dependencies(browser)
     page = client.get("/bank")
     assert 'href="/assets/bank.css"' in page.text
     assert 'src="/assets/bank.js"' in page.text
-    assert 'rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"' in page.text
+    assert 'rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=ux17-3"' in page.text
     favicon = client.get("/assets/favicon-32.png")
     assert favicon.status_code == 200
     assert favicon.headers["content-type"].startswith("image/png")
@@ -166,3 +166,32 @@ def test_fin_no_script_fallback_still_has_delete_confirmation_form(browser):
     token = re.search(r'name="deletion_token" value="([^"]+)"', preview.text)
     assert token is not None
     assert 'name="confirmation"' in preview.text
+
+
+def test_accounts_are_vertical_and_editing_uses_compact_modal(browser):
+    client, _ = browser
+    page = client.get("/bank").text
+    assert "<strong>fin</strong>" in page
+    assert "<strong>fin<span>.</span></strong>" not in page
+    assert 'id="fin-form-dialog"' in page
+    assert 'id="form-dialog-body"' in page
+    assert "Новый счёт после начального снимка пока создать нельзя" in page
+    assert 'id="form-event"' in page.split('id="events"', 1)[1]
+    css = client.get("/assets/bank.css").text
+    assert ".money-groups { display: grid; grid-template-columns: minmax(0,1fr);" in css
+    assert "#fin-form-dialog::backdrop" in css
+    js = client.get("/assets/bank.js").text
+    assert "function showFormDialog(details)" in js
+    assert 'form.closest("main, #fin-dialog, #fin-form-dialog")' in js
+    assert "source.cloneNode(true)" in js
+
+
+def test_empty_accounts_expose_a_clear_creation_action(tmp_path):
+    path = tmp_path / "blank-ui.sqlite3"
+    with SQLiteCashRepository(path):
+        pass
+    with TestClient(create_app(path), base_url="http://localhost") as client:
+        html = client.get("/bank").text
+    assert 'id="form-account"' in html
+    assert '<summary class="entrypoint">+ Добавить банковский счёт</summary>' in html
+    assert "Несколько счетов одного банка" in html

@@ -27,6 +27,7 @@
   let activeView = "overview";
   let notificationTimer = null;
   let lastDialogTrigger = null;
+  let formDialogTrigger = null;
   let inFlight = false;
 
   function groupDigits(value) {
@@ -133,6 +134,28 @@
     node.textContent = message;
     target.append(node);
     notificationTimer = setTimeout(() => target.replaceChildren(), error ? 8000 : 3200);
+  }
+
+  function showFormDialog(details) {
+    const source = details.querySelector(":scope > form");
+    const dialog = document.getElementById("fin-form-dialog");
+    const body = document.getElementById("form-dialog-body");
+    if (!source || !dialog || !body || typeof dialog.showModal !== "function") return false;
+    formDialogTrigger = details.querySelector(":scope > summary");
+    document.getElementById("form-dialog-title").textContent =
+      formDialogTrigger?.textContent.trim() || "Изменение записи";
+    body.replaceChildren(source.cloneNode(true));
+    prepareForms(body);
+    details.open = false;
+    dialog.showModal();
+    body.querySelector('input:not([type="hidden"]),select,textarea,button')?.focus({preventScroll: true});
+    return true;
+  }
+
+  function closeFormDialog() {
+    const dialog = document.getElementById("fin-form-dialog");
+    if (dialog?.open) dialog.close();
+    else document.getElementById("form-dialog-body")?.replaceChildren();
   }
 
   function closeDialog() {
@@ -264,8 +287,9 @@
       event.preventDefault();
       activateView(jump.dataset.switchView, true);
       const target = document.getElementById(jump.dataset.focusId);
-      if (target?.tagName === "DETAILS") target.open = true;
-      target?.scrollIntoView({behavior: "instant", block: "nearest"});
+      if (target?.tagName === "DETAILS") {
+        if (!showFormDialog(target)) target.open = true;
+      } else target?.scrollIntoView({behavior: "instant", block: "nearest"});
       return;
     }
 
@@ -274,6 +298,20 @@
       event.preventDefault();
       activateView(PANEL_TO_VIEW[inPage.hash.slice(1)], true);
       return;
+    }
+
+    if (event.target.closest?.("[data-close-form-dialog]")) {
+      event.preventDefault();
+      closeFormDialog();
+      return;
+    }
+
+    const editorSummary = event.target.closest?.("details > summary");
+    if (editorSummary && editorSummary.parentElement.querySelector(":scope > form")) {
+      if (showFormDialog(editorSummary.parentElement)) {
+        event.preventDefault();
+        return;
+      }
     }
 
     if (event.target.closest?.("[data-close-dialog]") || event.target.closest?.('#fin-dialog a[href^="/bank"]')) {
@@ -313,7 +351,7 @@
 
   document.addEventListener("submit", async (event) => {
     const form = event.target;
-    if (!(form instanceof HTMLFormElement) || !form.closest("main, #fin-dialog")) return;
+    if (!(form instanceof HTMLFormElement) || !form.closest("main, #fin-dialog, #fin-form-dialog")) return;
     event.preventDefault();
     if (inFlight) {
       notify("Предыдущий запрос ещё выполняется.", true);
@@ -365,6 +403,7 @@
         return;
       }
       if (isDeleteConfirm) closeDialog();
+      if (form.closest("#fin-form-dialog")) closeFormDialog();
       const finalURL = new URL(response.url);
       const selectedDate = isDateUpdate
         ? url.searchParams.get("as_of")
@@ -393,7 +432,16 @@
     if (lastDialogTrigger?.isConnected) lastDialogTrigger.focus({preventScroll: true});
     lastDialogTrigger = null;
   });
+  document.getElementById("fin-form-dialog")?.addEventListener("close", () => {
+    document.getElementById("form-dialog-body")?.replaceChildren();
+    if (formDialogTrigger?.isConnected) formDialogTrigger.focus({preventScroll: true});
+    formDialogTrigger = null;
+  });
   window.addEventListener("hashchange", () => activateView(viewFromHash(location.hash)));
   prepareForms(document);
+  // Native details remain the complete no-JS fallback; JS uses compact modal forms.
+  document.querySelectorAll("main details[open]").forEach((details) => {
+    if (details.querySelector(":scope > form")) details.open = false;
+  });
   activateView(viewFromHash(location.hash));
 })();

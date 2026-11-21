@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>Fin — Bank</title>
-  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=ux17-3">
   <style>
     :root{font:15px system-ui,-apple-system,"Segoe UI",sans-serif;color:#19283a;background:#f5f7fa;color-scheme:light}
     *{box-sizing:border-box}body{margin:0}header{background:#1c273b;color:white;padding:17px max(15px,calc((100vw - 1100px)/2))}
@@ -114,7 +114,7 @@
         {{ delete_action('holding', h.id, 'Удалить вложение') }}
   {%- endmacro %}
   <header class="app-header">
-    <div class="brand"><strong>fin<span>.</span></strong><span>Личные финансы</span></div>
+    <div class="brand"><strong>fin</strong><span>Личные финансы</span></div>
     <div class="local-state"><span class="status-dot" aria-hidden="true"></span> Локальный учёт · данные только в Fin</div>
   </header>
   <main id="bank-main">
@@ -193,6 +193,7 @@
       <div class="money-groups">
         <div class="money-group" id="bank-accounts">
           <h3>Банковские счета <span class="pill">{{ bank_accounts|length }}</span></h3>
+          <p class="small group-helper">Здесь отображаются денежные счета. Несколько счетов одного банка и отдельные валюты будут поддержаны единым справочником банков.</p>
           {% if bank_accounts %}
           <div class="scroll"><table><thead><tr><th>Банк / счёт</th><th>Валюта</th><th>Остаток на дату</th><th>Действия</th></tr></thead>
           <tbody>{% for a in bank_accounts %}<tr>
@@ -212,7 +213,7 @@
           {% else %}<p class="small">Банковских счетов пока нет.</p>{% endif %}
           {% if not opening %}
           <details id="form-account" {% if not bank_accounts or failed_form == 'account' %}open{% endif %}>
-            <summary>+ Добавить банковский счёт</summary>
+            <summary class="entrypoint">+ Добавить банковский счёт</summary>
             <form method="post" action="/bank/account">{{ token() }}
               <input type="hidden" name="kind" value="bank">
               <div class="grid">
@@ -224,6 +225,8 @@
               <button>Добавить банковский счёт</button>
             </form>
           </details>
+          {% else %}
+          <p class="small account-limit">Новый счёт после начального снимка пока создать нельзя: это требует безопасного дополнения истории остатков. Существующие счета можно переименовать выше; добавление счетов после снимка — следующая функциональная задача.</p>
           {% endif %}
         </div>
         <div class="money-group" id="cash-on-hand">
@@ -247,7 +250,7 @@
           {% else %}<p class="small">Наличные пока не внесены.</p>{% endif %}
           {% if not opening %}
           <details id="form-cash" {% if failed_form == 'cash' %}open{% endif %}>
-            <summary>+ Добавить наличные</summary>
+            <summary class="entrypoint">+ Добавить наличные</summary>
             <form method="post" action="/bank/cash">{{ token() }}
               <div class="grid">
                 <label>Валюта<input name="currency" value="{{ prior('cash','currency','UAH') }}" required></label>
@@ -283,21 +286,7 @@
           <button class="mini">Сохранить</button>
         </form></details>
       {{ delete_action('opening', '1', 'Удалить начальный снимок') }}
-      <details id="form-event" open><summary>Новая денежная операция</summary>
-        <form method="post" action="/bank/event">{{ token() }}
-          <div class="grid">
-            <label>Дата<input type="date" name="effective_on" value="{{ prior('event','effective_on',today.isoformat()) }}" required></label>
-            <label>Тип<select name="kind">
-              {% for val,title in [('inflow','Поступление'),('outflow','Расход'),('transfer','Перемещение между банком и наличными'),('correction','Корректировка')] %}
-              <option value="{{ val }}" {{ chosen('event','kind',val,'inflow') }}>{{ title }}</option>{% endfor %}
-            </select></label>
-            <label>Откуда (банк или наличные)<select name="account_id">{% for a in accounts %}<option value="{{ a.id }}" {{ chosen('event','account_id',a.id) }}>{{ account_labels[a.id] }}</option>{% endfor %}</select></label>
-            <label>Куда (для перевода)<select name="to_account_id"><option value="">—</option>{% for a in accounts %}<option value="{{ a.id }}" {{ chosen('event','to_account_id',a.id) }}>{{ account_labels[a.id] }}</option>{% endfor %}</select></label>
-            <label>Сумма<input name="amount" value="{{ prior('event','amount') }}" required placeholder="100.00" data-grouped inputmode="decimal"></label>
-            <label>Причина корректировки<input name="note" value="{{ prior('event','note') }}"></label>
-          </div><button>Записать операцию</button>
-          <p class="small">Расход и перевод вводи положительным числом; корректировку — со знаком плюс или минус.</p>
-        </form></details>
+
       {% endif %}
     </section>
 
@@ -356,6 +345,7 @@
     <section class="card" id="monthly-controls">
       <div class="section-heading"><div><span class="eyebrow">Контроль качества учёта</span>
       <h2>Ежемесячная сверка остатков</h2></div></div>
+      <p class="workflow-hint"><strong>Как пользоваться:</strong> в конце месяца сравни выписку или фактические остатки с расчётом Fin → сохрани контрольный снимок → если найдена разница, проверь операции → только затем подтверди корректировку с причиной. Снимок сам по себе ничего не списывает и не зачисляет.</p>
       <p class="small">Контрольный снимок хранит увиденные на конец месяца остатки всех счетов.
         Снимок <strong>не изменяет</strong> деньги автоматически. Корректировка проводится отдельно
         и требует причины. Сравнение выполняется по каждому счёту в его валюте.</p>
@@ -650,6 +640,7 @@
     <section class="card" id="payments">
       <div class="section-heading"><div><span class="eyebrow">План / факт</span>
       <h2>Календарь плановых и фактических выплат</h2></div></div>
+      <p class="workflow-hint"><strong>Порядок работы:</strong> добавь план выплаты к вложению → при получении запиши фактическую дату и сумму → зачисли полученное на конкретный денежный счёт. Ожидаемая выплата не изменяет остаток.</p>
       <details class="explanation"><summary>Как устроен календарь выплат</summary>
       <p class="small"><strong>План:</strong> ожидаемый купон, проценты депозита или возврат тела в конкретную дату.
       <strong>Факт:</strong> фактически поступившие деньги. Несколько купонов одного выпуска — отдельные строки. Внутренние ID создаются автоматически.</p>
@@ -740,6 +731,26 @@
 
     <section class="card" id="events"><div class="section-heading">
       <div><span class="eyebrow">История движения денег</span><h2>Денежные операции</h2></div></div>
+      <p class="workflow-hint"><strong>Здесь фиксируются реальные денежные изменения:</strong> поступления, расходы, переводы между своими счетами и корректировки. Перевод между собственными счетами не создаёт дохода. Плановые инвестиционные выплаты хранятся отдельно во вкладке «Выплаты».</p>
+      {% if opening %}
+      <details id="form-event"><summary>Новая денежная операция</summary>
+        <form method="post" action="/bank/event">{{ token() }}
+          <div class="grid">
+            <label>Дата<input type="date" name="effective_on" value="{{ prior('event','effective_on',today.isoformat()) }}" required></label>
+            <label>Тип<select name="kind">
+              {% for val,title in [('inflow','Поступление'),('outflow','Расход'),('transfer','Перемещение между банком и наличными'),('correction','Корректировка')] %}
+              <option value="{{ val }}" {{ chosen('event','kind',val,'inflow') }}>{{ title }}</option>{% endfor %}
+            </select></label>
+            <label>Откуда (банк или наличные)<select name="account_id">{% for a in accounts %}<option value="{{ a.id }}" {{ chosen('event','account_id',a.id) }}>{{ account_labels[a.id] }}</option>{% endfor %}</select></label>
+            <label>Куда (для перевода)<select name="to_account_id"><option value="">—</option>{% for a in accounts %}<option value="{{ a.id }}" {{ chosen('event','to_account_id',a.id) }}>{{ account_labels[a.id] }}</option>{% endfor %}</select></label>
+            <label>Сумма<input name="amount" value="{{ prior('event','amount') }}" required placeholder="100.00" data-grouped inputmode="decimal"></label>
+            <label>Причина корректировки<input name="note" value="{{ prior('event','note') }}"></label>
+          </div><button>Записать операцию</button>
+          <p class="small">Расход и перевод вводи положительным числом; корректировку — со знаком плюс или минус.</p>
+        </form></details>
+      {% else %}
+      <p class="small">Чтобы добавлять операции, сначала зафиксируй начальные остатки в разделе <a href="#accounts">«Деньги»</a>.</p>
+      {% endif %}
       {% if events %}
       <div class="scroll"><table><thead><tr><th>Дата</th><th>Тип</th><th>Источник / назначение</th><th>Изменения</th><th>Примечание / изменение</th></tr></thead>
       <tbody>{% for e in events %}<tr>
@@ -773,6 +784,11 @@
     <div class="dialog-toolbar"><strong>Проверка действия</strong>
       <button type="button" class="dialog-dismiss" data-close-dialog aria-label="Закрыть окно">✕</button></div>
     <div id="dialog-body"></div>
+  </dialog>
+  <dialog id="fin-form-dialog" aria-labelledby="form-dialog-title">
+    <div class="dialog-toolbar"><strong id="form-dialog-title">Изменение записи</strong>
+      <button type="button" class="dialog-dismiss" data-close-form-dialog aria-label="Закрыть форму">✕</button></div>
+    <div id="form-dialog-body"></div>
   </dialog>
   <div id="fin-toast" class="toast" role="status" aria-live="polite"></div>
 </body>
