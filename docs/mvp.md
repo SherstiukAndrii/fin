@@ -111,3 +111,25 @@ confirmed closing quantities take precedence in the displayed position;
 the associated manual contract lots remain separately editable, not added
 as new assets. Movement-only records never replace known manual lots.
 No cash or forecast obligation is created just by importing a statement.
+
+## Deleting entities
+
+The user may remove any currently supported Bank object through a two-step
+preview/confirmation flow. The visible entities include accounts, opening
+snapshot, cash events, monthly controls, investments, scheduled payouts,
+actual receipts, imported statements, and imported security positions. Persist
+no guessed amounts: removal of a posted receipt undoes its linked account credit;
+removal of a parent investment cascades only its related payouts, receipts and
+credits, with impact visible in preview. Removing a confirmed monthly
+reconciliation also undoes its linked correction. A correction event can instead
+be deleted while retaining the original observed control snapshot.
+
+Account or opening-snapshot removal must be blocked when it would invalidate
+existing account history or month-end observations. Permit it only when the
+relevant dependencies have been removed explicitly. Preview is read-only,
+contains an authoritative dependency summary, and issues a signed fingerprint
+for stale-submit detection. Confirmation requires a typed instruction, CSRF,
+full SQLite backup outside the repository, an atomic write transaction and
+foreign-key checks. No hidden cascade from account deletion, no database
+migration, no personal fixture, no automatic import remapping or new cash flow.
+
