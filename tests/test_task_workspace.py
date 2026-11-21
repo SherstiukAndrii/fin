@@ -103,8 +103,9 @@ def test_money_master_detail_separates_bank_and_cash(browser):
     assert "Pocket money" in page.text
     assert "Выбери запись слева" in page.text
     assert 'id="object-search"' in page.text
-    assert 'data-form-id="form-account"' in page.text
-    assert 'data-form-id="form-cash"' in page.text
+    assert 'data-form-id="form-account"' not in page.text
+    assert 'data-form-id="form-cash"' not in page.text
+    assert "Новые счета после начального снимка пока не поддерживаются" in page.text
     assert '<details id="form-account"' not in page.text
 
     detail = client.get("/workspace?area=money&target=bank&as_of=2028-02-15")
