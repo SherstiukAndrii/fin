@@ -105,7 +105,7 @@ def test_money_master_detail_separates_bank_and_cash(browser):
     assert "Выбери запись слева" in page.text
     assert 'id="object-search"' in page.text
     assert 'data-form-id="form-account"' not in page.text
-    assert 'data-form-id="form-cash"' not in page.text
+    assert 'data-form-id="form-cash"' in page.text
     assert "Новые счета после начального снимка пока не поддерживаются" in page.text
     assert '<details id="form-account"' not in page.text
 

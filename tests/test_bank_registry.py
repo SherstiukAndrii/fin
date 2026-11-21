@@ -89,7 +89,7 @@ def test_many_cash_accounts_same_bank_currency_and_securities_are_distinct(tmp_p
             "savings": money("500"),
         }
         assert repo.get_securities_account("bonds").bank_id == "fictional"
-        with pytest.raises(ValueError, match="Cash"):
+        with pytest.raises(ValueError, match="cash"):
             CashAccount("wrong", "Cash", "UAH", AccountKind.CASH, "fictional")
     with SQLiteCashRepository(path) as repo:
         assert repo.schema_version() == SCHEMA_VERSION == 6
@@ -284,15 +284,15 @@ def test_task_first_web_supports_bank_many_accounts_and_external_links(tmp_path,
     with TestClient(create_app(path), base_url="http://localhost") as client:
         token = client.app.state.csrf_token
 
-        def submit(kind, **fields):
+        def submit(route, **fields):
             return client.post(
-                f"/bank/{kind}",
+                f"/bank/{route}",
                 data={"csrf": token, **fields},
                 follow_redirects=False,
             )
 
-        def created(kind, **fields):
-            response = submit(kind, **fields)
+        def created(route, **fields):
+            response = submit(route, **fields)
             assert response.status_code == 303
 
         created(

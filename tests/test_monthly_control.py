@@ -156,7 +156,7 @@ def test_reconciliation_guarded_and_immutable(store):
 def test_incomplete_invalid_or_duplicate_observations_are_atomic(store):
     with pytest.raises(ValueError, match="last calendar day"):
         observe(store, day=date(2027, 1, 30))
-    with pytest.raises(ValueError, match="every account"):
+    with pytest.raises(ValueError, match="every active account"):
         store.record_monthly_control("partial", date(2027, 1, 31), {"bank": money("5")})
     with pytest.raises(CurrencyMismatchError):
         store.record_monthly_control(
@@ -190,11 +190,11 @@ def test_existing_v3_database_migrates_without_rewriting_balances(tmp_path):
                VALUES ('a', '123.456789', 'UAH')"""
         )
     with SQLiteCashRepository(path) as repo:
-        assert repo.schema_version() == 5
+        assert repo.schema_version() == 6
         assert repo.balances_on(date(2027, 1, 31))["a"] == money("123.456789")
         assert repo.list_monthly_controls() == ()
     with SQLiteCashRepository(path) as repo:
-        assert repo.schema_version() == 5
+        assert repo.schema_version() == 6
         assert repo.balances_on(date(2027, 1, 31))["a"] == money("123.456789")
     with sqlite3.connect(path) as db:
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
