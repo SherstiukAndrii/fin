@@ -189,6 +189,15 @@ def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
         else:
             repo.add_securities_account(account)
     elif kind in {"account", "cash"}:
+        account_kind = (
+            AccountKind.CASH if kind == "cash" else AccountKind(_field(form, "kind"))
+        )
+        if kind == "cash" and _field(form, "kind", optional=True) not in {"", "cash"}:
+            raise ValueError("Наличные добавляются отдельно от банковских счетов")
+        if kind == "account" and not editing and account_kind != AccountKind.BANK:
+            raise ValueError("Для наличных используй отдельную форму")
+        if account_kind == AccountKind.CASH and _field(form, "bank_id", optional=True):
+            raise ValueError("Наличные не принадлежат банку")
         account = CashAccount(
             _field(form, "id")
             if editing
@@ -200,8 +209,12 @@ def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
             if kind == "cash"
             else _field(form, "name"),
             _field(form, "currency").upper(),
-            AccountKind.CASH if kind == "cash" else AccountKind(_field(form, "kind")),
-            _field(form, "bank_id", optional=True) or None if kind == "account" else None,
+            account_kind,
+            (
+                _field(form, "bank_id", optional=True) or None
+                if account_kind == AccountKind.BANK
+                else None
+            ),
             (
                 date.fromisoformat(_field(form, "opened_on"))
                 if _field(form, "opened_on", optional=True)

@@ -344,6 +344,7 @@
           <details id="form-cash" {% if failed_form == 'cash' %}open{% endif %}>
             <summary class="entrypoint">+ Добавить наличные</summary>
             <form method="post" action="/bank/cash">{{ token() }}
+              <p class="small">Наличные можно учитывать без банка. Укажи валюту и, при желании, место хранения — название банка не требуется.</p>
               <div class="grid">
                 <label>Валюта<input name="currency" value="{{ prior('cash','currency','UAH') }}" required></label>
                 <label>Где хранятся (необязательно)
@@ -362,7 +363,7 @@
       </div>
       <p class="small">Валюты не суммируются без курса обмена.</p>
       {% if not opening %}
-      <div class="banner">Сначала добавь банки и/или наличные, затем зафиксируй начальные суммы на выбранную дату.</div>
+      <div class="banner">Добавь банковский счёт или наличные на руках (без банка), затем зафиксируй начальные суммы на выбранную дату.</div>
       {% if accounts %}
       <details id="form-opening" open><summary>Начальные остатки банков и наличных (однократно)</summary>
         <form method="post" action="/bank/opening">{{ token() }}

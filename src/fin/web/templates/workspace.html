@@ -133,7 +133,7 @@
     {% else %}
       <div class="page-heading"><div>
         <p class="kicker">ВЫБЕРИ ОБЪЕКТ → ДЕЙСТВУЙ</p>
-        {% if area == 'money' %}<h1>Деньги</h1><p>Банковские счета отдельно от наличных. Выбери строку для управления.</p>
+        {% if area == 'money' %}<h1>Деньги</h1><p>Банковские счета и наличные — разные места хранения. Наличные можно добавить без банка.</p>
         {% elif area == 'assets' %}<h1>Портфель</h1><p>Один актив за раз: количество, условия, выплаты и действия.</p>
         {% elif area == 'due' %}<h1>Календарь выплат</h1><p>План отдельно от факта. Открой выплату для подтверждения поступления.</p>
         {% elif area == 'activity' %}<h1>Журнал операций</h1><p>История фактических движений. Перевод между своими средствами не доход.</p>
@@ -141,12 +141,12 @@
       </div>
       <div class="page-heading-actions">
         {% if area == 'money' %}
-          {{ action('+ Банк', 'form-bank', 'accounts', 'primary') }}
+          {{ action('+ Наличные', 'form-cash', 'accounts', 'primary' if not banks else 'subtle') }}
+          {{ action('+ Банк', 'form-bank', 'accounts', 'subtle' if not banks else 'primary') }}
           {% if banks %}
             {{ action('+ Денежный счёт', 'form-account', 'accounts', 'subtle') }}
             {{ action('+ Счёт ценных бумаг', 'form-securities-account', 'accounts', 'subtle') }}
           {% endif %}
-          {{ action('+ Наличные', 'form-cash', 'accounts', 'subtle') }}
           {% if not opening %}
             {% if accounts %}{{ action('Начальные остатки', 'form-opening', 'accounts', 'subtle') }}{% endif %}
           {% else %}
