@@ -12,13 +12,13 @@ from pathlib import Path
 from fin.domain.accounts import (
     AccountKind,
     Bank,
-    SecuritiesAccount,
     CashAccount,
     CashEvent,
     CashEventKind,
     CashLeg,
     OpeningBalance,
     OpeningSnapshot,
+    SecuritiesAccount,
     actual_balances,
 )
 from fin.domain.money import CurrencyMismatchError, Money

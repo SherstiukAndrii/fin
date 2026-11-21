@@ -19,13 +19,13 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fin.domain.accounts import (
     AccountKind,
     Bank,
-    SecuritiesAccount,
     CashAccount,
     CashEvent,
     CashEventKind,
     CashLeg,
     OpeningBalance,
     OpeningSnapshot,
+    SecuritiesAccount,
 )
 from fin.domain.bank import (
     ActualReceipt,

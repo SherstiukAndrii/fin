@@ -6,14 +6,13 @@ All Decimal values are stored as TEXT, never SQL REAL.
 
 import os
 import sqlite3
-from contextlib import closing
-from datetime import UTC, datetime
 from collections.abc import Iterable
-from datetime import date
+from contextlib import closing
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from uuid import uuid4
 from types import TracebackType
+from uuid import uuid4
 
 from fin.domain.bank import (
     ActualReceipt,
