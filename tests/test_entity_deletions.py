@@ -336,7 +336,7 @@ def browser(tmp_path, monkeypatch):
 def test_web_delete_preview_requires_explicit_word_and_creates_backup(browser):
     client, path, backup_directory = browser
     csrf = client.app.state.csrf_token
-    view = client.get("/bank?as_of=2028-03-03")
+    view = client.get("/bank/forms?as_of=2028-03-03")
     assert view.status_code == 200
     assert "Удалить вложение" in view.text
     assert "Удалить выплату" in view.text
@@ -392,7 +392,7 @@ def test_web_shows_import_management_and_deletes_all_group_records(browser):
     with SQLiteCashRepository(path) as repo:
         add_import(repo, "movement", "movement", 5, date(2028, 2, 1))
         add_import(repo, "closing", "closing", 10, date(2028, 3, 1))
-    html = client.get("/bank?as_of=2028-03-03").text
+    html = client.get("/bank/forms?as_of=2028-03-03").text
     assert "Удалить позицию" in html
     assert "Удалить запись" in html
     assert 'id="import-records"' in html

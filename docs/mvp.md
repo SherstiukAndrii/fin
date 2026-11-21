@@ -147,31 +147,39 @@ No migration, conversion of existing entries, new flows or invented income.
 Cash deletion uses a distinct UI and signed preview label, with existing
 foreign-key and backup safeguards.
 
-## Bank usability redesign
+## Single task-first Bank UI (PR #17)
 
-Bank uses a local, responsive multi-workspace layout instead of scrolling
-through every form and ledger at once. Overview shows dated real and
-potential cash **separately per currency**, with forecast details behind a
-disclosure. Accounts, investments/import, payment calendar, month-end
-reconciliation and money events have dedicated navigation tabs. Unrelated
-sections remain in the DOM for progressive enhancement but are visually
-hidden when JavaScript is available. Deep links to existing section anchors
-continue working.
+The chosen design is **C** (previously evaluated in draft PR #20).
+It replaces the tabbed, large-page Bank styling outright. Route `/bank`
+displays only the new task-first, object-focused interface; `/workspace`
+is a compatibility alias to the same UI, **not a second design**.
+The older `bank.css` and `bank.js` are removed.
 
-The as-of date is a viewing filter, separate from the dates used in forms.
-The date panel is stable during AJAX refresh. It provides calendar picking,
-month arrows, Today and previous-month-end shortcuts; the apply button
-does not move. Date navigation never creates transactions or invents
-currency conversion. Successful actions replace the affected data sections
-without replacing the entire page shell, so the date, tab selection and
-scroll position stay stable.
+Use a short overview for as-of real vs potential cash by currency, a small
+set of common tasks and outstanding payouts. The other work areas
+(Money, Portfolio, Payouts, History, Reconciliation) display a searchable
+object list and one selected-object inspector. Avoid unrelated forms in the
+DOM of the main page. Use local native-dialog workflows with preserved focus
+for edit/create/deletion actions, and keep a stable date picker.
 
-Deleting any supported entity uses the existing backend verification and
-transaction. A native dialog shows the deletion preview in place, without
-scrolling to the top or showing a permanent alert panel in the page layout.
-The dialog is keyboard-accessible and can be dismissed without mutating
-data. The full-page flow remains a no-JavaScript fallback. Local static
-assets must be included in the Python package and permitted by the CSP.
-Regression tests cover the date, tab links, CSS, JavaScript, CSRF preview
-and financial snapshot integrity; JavaScript syntax is checked in CI.
+Account creation is offered only before an opening snapshot; actual
+transactions and monthly controls require an existing snapshot. Missing
+capabilities must not be presented as active buttons. Cash stays distinct
+from bank accounts; a bank↔cash transfer is not income. Payout plans do
+not post money, principal redemption is not income, imports never double
+count the same holding, and currencies are never combined without FX.
 
+The existing internal form library (`/bank/forms`, `bank_forms.html`)
+is a **private implementation route**, not a public-facing alternative UI.
+This route produces validated forms, error details, and signed deletion
+previews for client-side dialogs; form POSTs continue through the existing
+CSRF-protected audited `/bank/*` endpoints. Do not remove it until native
+form fragments cover every action and are regression-tested. Deletion
+still needs a review of dependencies, a signed confirmation, explicit
+typed approval, private SQLite backup, and atomic foreign-key-safe writes.
+No migration, financial record rewrite, or personal financial data in Git.
+
+All UI resources must ship locally and pass Node syntax and Python
+integration tests on 3.12/3.13/3.14, Ruff checks, and a browser usability
+review. The previous CSS-only UX branches #18/#19 and prototype branch
+#20 are not part of the final UI. They remain unmerged alternatives.

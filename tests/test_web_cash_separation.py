@@ -38,7 +38,7 @@ def assert_saved(client, route, **values):
 
 def test_cash_uses_separate_creation_and_distinct_display(browser):
     client, path = browser
-    page = client.get("/bank")
+    page = client.get("/bank/forms")
     assert 'data-view="accounts">Деньги</a>' in page.text
     assert 'id="bank-accounts"' in page.text
     assert 'id="cash-on-hand"' in page.text
@@ -56,7 +56,7 @@ def test_cash_uses_separate_creation_and_distinct_display(browser):
         assert cash.name == "На руках"
         assert cash.currency == "UAH"
 
-    html = client.get("/bank").text
+    html = client.get("/bank/forms").text
     bank_view = html.split('id="bank-accounts"', 1)[1].split('id="cash-on-hand"', 1)[0]
     cash_view = html.split('id="cash-on-hand"', 1)[1].split('id="form-opening"', 1)[0]
     assert "Fictional Bank" in bank_view
@@ -85,7 +85,7 @@ def test_bank_and_cash_transfers_preserve_total_real_balance(browser):
             f"balance_{cash.id}": "200",
         },
     )
-    earlier = client.get("/bank?as_of=2028-01-01").text
+    earlier = client.get("/bank/forms?as_of=2028-01-01").text
     assert "1 000" in earlier
     assert "200" in earlier
     assert "Наличные на руках" in earlier
@@ -150,7 +150,7 @@ def test_cash_label_and_bank_label_preserved_in_transaction_forms(browser):
     client, _ = browser
     assert_saved(client, "account", name="Fictional Bank", currency="UAH", kind="bank")
     assert_saved(client, "cash", currency="UAH")
-    html = client.get("/bank").text
+    html = client.get("/bank/forms").text
     assert "Банковские счета" in html
     assert "Наличные на руках" in html
     assert "Наличные · На руках (UAH)" in html

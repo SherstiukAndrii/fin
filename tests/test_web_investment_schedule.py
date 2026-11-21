@@ -218,7 +218,7 @@ def test_repository_composite_rollback_on_wrong_holding_id(tmp_path):
 
 def test_browser_shows_schedule_builder_for_both_investment_forms(browser):
     client, _, _ = browser
-    page = client.get("/bank")
+    page = client.get("/bank/forms")
     assert page.status_code == 200
     assert page.text.count("data-schedule-builder") == 2
     assert page.text.count("data-schedule-template") == 2
@@ -229,7 +229,7 @@ def test_browser_shows_schedule_builder_for_both_investment_forms(browser):
     assert 'name="schedule_kind"' in page.text
     assert 'name="schedule_on"' in page.text
     assert 'name="schedule_amount"' in page.text
-    js = client.get("/assets/bank.js").text
+    js = client.get("/assets/workspace.js").text
     assert "data-schedule-add" in js
     assert "data-schedule-remove" in js
     assert 'button[type="submit"],button:not([type])' in js

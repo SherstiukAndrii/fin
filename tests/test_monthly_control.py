@@ -226,7 +226,7 @@ def test_web_control_snapshot_and_separate_confirmation(browser):
         == 303
     )
     assert send(browser, "opening", as_of="2027-01-01", balance_bank="100").status_code == 303
-    page = client.get("/bank?as_of=2027-01-31")
+    page = client.get("/bank/forms?as_of=2027-01-31")
     assert page.status_code == 200
     assert "Ежемесячная сверка остатков" in page.text
     assert 'name="as_of" value="2027-01-31"' in page.text
@@ -245,7 +245,7 @@ def test_web_control_snapshot_and_separate_confirmation(browser):
         assert len(snapshots) == 1
         assert len(repo.list_cash_events()) == 0
         assert repo.balances_on(date(2027, 1, 31))["bank"] == money("100")
-    html = client.get("/bank?as_of=2027-01-31").text
+    html = client.get("/bank/forms?as_of=2027-01-31").text
     assert "Подтвердить корректировку" in html
     assert 'name="expected_difference" value="12.50"' in html
     assert (
@@ -263,7 +263,7 @@ def test_web_control_snapshot_and_separate_confirmation(browser):
         assert repo.balances_on(date(2027, 1, 31))["bank"] == money("112.50")
         assert len(repo.list_cash_events()) == 1
         assert repo.list_monthly_controls()[0].balances[0].correction_event_id is not None
-    html = client.get("/bank?as_of=2027-01-31").text
+    html = client.get("/bank/forms?as_of=2027-01-31").text
     assert "Корректировка подтверждена" in html
     assert (
         send(
@@ -279,7 +279,7 @@ def test_web_control_snapshot_and_separate_confirmation(browser):
 
 
 def test_no_opening_does_not_offer_monthly_capture(browser):
-    page = browser[0].get("/bank")
+    page = browser[0].get("/bank/forms")
     assert page.status_code == 200
     assert "Сначала укажи банки и/или наличные, затем начальные остатки" in page.text
     assert 'action="/bank/control?' not in page.text

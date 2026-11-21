@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="fin-csrf" content="{{ csrf }}">
+  <title>Fin — рабочее пространство</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=ux17-4">
+  <link rel="stylesheet" href="/assets/workspace.css">
+  <script src="/assets/workspace.js" defer></script>
+</head>
+<body>
+{% macro action(label, form_id, fallback, modifier='primary') -%}
+  <a class="action {{ modifier }}" href="/bank/forms?as_of={{ as_of.isoformat() }}#{{ fallback }}"
+     data-form-id="{{ form_id }}">{{ label }}</a>
+{%- endmacro %}
+{% macro edit(label, kind, record, fallback) -%}
+  <a class="action subtle" href="/bank/forms?as_of={{ as_of.isoformat() }}#{{ fallback }}"
+     data-edit-action="{{ kind }}" data-record-id="{{ record }}">{{ label }}</a>
+{%- endmacro %}
+{% macro remove(kind, record, fallback) -%}
+  <a class="action danger" href="/bank/forms?as_of={{ as_of.isoformat() }}#{{ fallback }}"
+     data-delete-kind="{{ kind }}" data-record-id="{{ record|forceescape }}">Удалить…</a>
+{%- endmacro %}
+{% macro empty_state(heading, description) -%}
+  <div class="empty-state"><strong>{{ heading }}</strong><p>{{ description }}</p></div>
+{%- endmacro %}
+<header class="topbar">
+  <a href="/bank" class="logo" aria-label="Fin — главная">fin</a>
+  <div class="topbar-divider"></div>
+  <span class="topbar-context">Финансовое пространство</span>
+  <span class="privacy">Локально · Без облака</span>
+</header>
+<div class="layout">
+  <aside class="rail" aria-label="Основная навигация">
+    <div class="rail-heading">РАБОТА</div>
+    <nav class="rail-nav">
+      <a href="/bank?area=home&as_of={{ as_of.isoformat() }}" {% if area == 'home' %}aria-current="page"{% endif %}><span class="glyph" aria-hidden="true">⌂</span>Главная</a>
+      <a href="/bank?area=money&as_of={{ as_of.isoformat() }}" {% if area == 'money' %}aria-current="page"{% endif %}><span class="glyph" aria-hidden="true">₴</span>Деньги</a>
+      <a href="/bank?area=assets&as_of={{ as_of.isoformat() }}" {% if area == 'assets' %}aria-current="page"{% endif %}><span class="glyph" aria-hidden="true">◈</span>Портфель</a>
+      <a href="/bank?area=due&as_of={{ as_of.isoformat() }}" {% if area == 'due' %}aria-current="page"{% endif %}><span class="glyph" aria-hidden="true">◷</span>Выплаты {% if overdue_count %}<span class="counter">{{ overdue_count }}</span>{% endif %}</a>
+      <a href="/bank?area=activity&as_of={{ as_of.isoformat() }}" {% if area == 'activity' %}aria-current="page"{% endif %}><span class="glyph" aria-hidden="true">⇄</span>История</a>
+      <a href="/bank?area=review&as_of={{ as_of.isoformat() }}" {% if area == 'review' %}aria-current="page"{% endif %}><span class="glyph" aria-hidden="true">✓</span>Сверка</a>
+    </nav>
+    <div class="rail-divider"></div>
+    <div class="rail-heading">БЫСТРЫЕ ДЕЙСТВИЯ</div>
+    <div class="rail-actions">
+      {% if opening %}
+        {{ action('+ Операция', 'form-event', 'events', 'quick-action') }}
+      {% else %}
+        <a class="action quick-action" href="/bank?area=money&as_of={{ as_of.isoformat() }}">Настроить деньги</a>
+      {% endif %}
+      {{ action('+ Вложение', 'form-bond', 'holdings', 'quick-action') }}
+      {{ action('Импортировать PDF', 'form-securities-import', 'imported-securities', 'quick-action') }}
+    </div>
+    <p class="rail-footnote">Плановые суммы не меняют реальные остатки. Наличные и банковские счета учитываются отдельно.</p>
+  </aside>
+
+  <main id="workspace-main">
+    <div class="main-toolbar">
+      <div class="location-line">Fin <span>/</span>
+        {% if area == 'home' %}Главная{% elif area == 'money' %}Деньги{% elif area == 'assets' %}Портфель{% elif area == 'due' %}Выплаты{% elif area == 'activity' %}История{% else %}Сверка{% endif %}
+      </div>
+      <form id="period-form" method="get" action="/bank" aria-label="Дата просмотра">
+        <input type="hidden" name="area" value="{{ area }}">
+        {% if target %}<input type="hidden" name="target" value="{{ target }}">{% endif %}
+        <label for="workspace-date">На дату</label>
+        <input id="workspace-date" type="date" name="as_of" value="{{ as_of.isoformat() }}" required>
+        <button type="submit" class="date-apply">Применить</button>
+        <a class="today" href="/bank?area={{ area }}{% if target %}&target={{ target|urlencode }}{% endif %}&as_of={{ today.isoformat() }}">Сегодня</a>
+      </form>
+    </div>
+    {% if missing_db %}
+      <div class="attention" role="status">База не создана. Выполни <code>Fin: DB Init</code> и открой рабочее пространство снова.</div>
+    {% elif warning %}
+      <div class="attention" role="status">{{ warning }}</div>
+    {% endif %}
+
+    {% if area == 'home' %}
+    <div class="page-heading"><div><p class="kicker">СНАЧАЛА ГЛАВНОЕ</p><h1>Финансовая картина</h1>
+      <p>На {{ as_of.strftime('%d.%m.%Y') }}. Здесь только состояние и действия, а не все формы сразу.</p>
+    </div></div>
+    <section class="overview-balance" aria-labelledby="cash-heading">
+      <div class="section-top"><h2 id="cash-heading">Доступные деньги</h2><a href="/bank?area=money&as_of={{ as_of.isoformat() }}">Открыть деньги</a></div>
+      {% if outlook %}
+      <div class="balance-strip">{% for balance in outlook %}
+        <article class="currency-tile">
+          <span class="currency">{{ balance.currency }}</span>
+          <strong>{{ balance.actual_cash.amount|amount }}</strong>
+          <small>Потенциально к дате: {{ balance.potential_cash.amount|amount }}</small>
+        </article>
+      {% endfor %}</div>
+      {% else %}{{ empty_state('Остатков пока нет', 'Добавь банковский счёт или наличные и начальный снимок.') }}{% endif %}
+    </section>
+    <section class="start-tasks" aria-labelledby="task-heading">
+      {% if not opening %}
+      <h2 id="task-heading">Начни с начальных остатков</h2>
+      <div class="setup-hint">
+        <div><strong>Прежде чем записывать движение денег</strong>
+          <p>Добавь банковский счёт или наличные и зафиксируй сумму на дату начала учёта.
+            До этого реальные операции и месячная сверка недоступны.</p></div>
+        <a class="action primary" href="/bank?area=money&as_of={{ as_of.isoformat() }}">Настроить деньги</a>
+      </div>
+      {% else %}
+      <h2 id="task-heading">Что нужно сделать?</h2>
+      <div class="task-grid">
+        <div class="task-tile"><span>01 · ДЕНЬГИ</span><h3>Записать движение</h3><p>Расход, поступление или перевод между банком и наличными.</p>
+          {{ action('Новая операция', 'form-event', 'events') }}</div>
+        <div class="task-tile"><span>02 · ВЛОЖЕНИЯ</span><h3>Добавить актив</h3><p>ОВГЗ или депозит — без автоматического списания денег.</p>
+          {{ action('Добавить ОВГЗ', 'form-bond', 'holdings') }}
+          {{ action('Депозит', 'form-deposit', 'holdings', 'subtle') }}</div>
+        <div class="task-tile"><span>03 · ПРОВЕРКА</span><h3>Сверить реальность</h3><p>Сопоставь банковские и наличные суммы с журналом.</p>
+          <a href="/bank?area=review&as_of={{ as_of.isoformat() }}" class="action primary">Открыть сверку</a></div>
+      </div>
+      {% endif %}
+    </section>
+    <section class="work-queue" aria-labelledby="queue-heading">
+      <div class="section-top"><h2 id="queue-heading">Требует внимания</h2><a href="/bank?area=due&as_of={{ as_of.isoformat() }}">Все выплаты</a></div>
+      {% if overdue_count %}<p class="attention compact">{{ overdue_count }} запланированных выплат с прошедшей датой и непогашенным остатком. Это не подтверждение фактических денег.</p>{% endif %}
+      {% if outstanding %}
+      <div class="queue-items">{% for payment in outstanding[:5] %}
+        <a class="queue-item" href="/bank?area=due&target={{ payment.id|urlencode }}&as_of={{ as_of.isoformat() }}">
+          <span class="queue-date">{{ payment.due.strftime('%d.%m.%Y') }}</span>
+          <span class="queue-description">{{ payment.holding_label }}<small>{{ payment.kind }} · ожидается</small></span>
+          <strong>{{ payment.outstanding.amount|amount }} {{ payment.outstanding.currency }}</strong>
+          <span aria-hidden="true">›</span>
+        </a>
+      {% endfor %}</div>
+      {% else %}{{ empty_state('Пока нет ожидаемых выплат', 'При добавлении договора можно указать даты и суммы.') }}{% endif %}
+    </section>
+
+    {% else %}
+      <div class="page-heading"><div>
+        <p class="kicker">ВЫБЕРИ ОБЪЕКТ → ДЕЙСТВУЙ</p>
+        {% if area == 'money' %}<h1>Деньги</h1><p>Банковские счета отдельно от наличных. Выбери строку для управления.</p>
+        {% elif area == 'assets' %}<h1>Портфель</h1><p>Один актив за раз: количество, условия, выплаты и действия.</p>
+        {% elif area == 'due' %}<h1>Календарь выплат</h1><p>План отдельно от факта. Открой выплату для подтверждения поступления.</p>
+        {% elif area == 'activity' %}<h1>Журнал операций</h1><p>История фактических движений. Перевод между своими средствами не доход.</p>
+        {% else %}<h1>Сверка остатков</h1><p>Проверь наблюдаемые суммы до создания корректировок.</p>{% endif %}
+      </div>
+      <div class="page-heading-actions">
+        {% if area == 'money' %}
+          {% if not opening %}
+            {{ action('+ Банк', 'form-account', 'accounts', 'primary') }}
+            {{ action('+ Наличные', 'form-cash', 'accounts', 'subtle') }}
+            {% if accounts %}{{ action('Начальные остатки', 'form-opening', 'accounts', 'subtle') }}{% endif %}
+          {% else %}
+            <span class="setup-limit">Новые счета после начального снимка пока не поддерживаются</span>
+          {% endif %}
+        {% elif area == 'assets' %}
+          {{ action('+ ОВГЗ', 'form-bond', 'holdings') }}
+          {{ action('+ Депозит', 'form-deposit', 'holdings', 'subtle') }}
+          {{ action('Импорт PDF', 'form-securities-import', 'imported-securities', 'subtle') }}
+        {% elif area == 'due' %}
+          {{ action('+ План', 'form-payment', 'payments') }}
+          {{ action('Получено', 'form-receipt', 'payments', 'subtle') }}
+        {% elif area == 'activity' %}
+          {% if opening %}{{ action('+ Операция', 'form-event', 'events') }}
+          {% else %}<a class="action subtle" href="/bank?area=money&as_of={{ as_of.isoformat() }}">Начать учёт</a>{% endif %}
+        {% else %}
+          {% if opening %}{{ action('+ Сверка', 'form-control', 'monthly-controls') }}
+          {% else %}<a class="action subtle" href="/bank?area=money&as_of={{ as_of.isoformat() }}">Начать учёт</a>{% endif %}
+        {% endif %}
+      </div></div>
+
+      <div class="master-detail">
+        <section class="object-list" aria-label="Список объектов">
+          <div class="list-search">
+            <label for="object-search">Быстрый поиск</label>
+            <input id="object-search" type="search" placeholder="Найти по названию…" autocomplete="off">
+          </div>
+          <div class="list-rows" id="object-list">
+          {% if area == 'money' %}
+            {% if bank_accounts %}<p class="list-group-label">БАНКОВСКИЕ СЧЕТА</p>{% endif %}
+            {% for account in bank_accounts %}
+              <a class="object-row {% if selected_account and selected_account.id == account.id %}selected{% endif %}"
+                href="/bank?area=money&target={{ account.id|urlencode }}&as_of={{ as_of.isoformat() }}">
+                <span class="object-avatar bank">Б</span><span class="object-copy"><strong>{{ account.name }}</strong><small>{{ account.currency }} · банк</small></span>
+                <span class="object-number">{% if account.id in balances %}{{ balances[account.id].amount|amount }}{% else %}—{% endif %}</span>
+              </a>
+            {% endfor %}
+            {% if cash_locations %}<p class="list-group-label">НАЛИЧНЫЕ</p>{% endif %}
+            {% for account in cash_locations %}
+              <a class="object-row {% if selected_account and selected_account.id == account.id %}selected{% endif %}"
+                href="/bank?area=money&target={{ account.id|urlencode }}&as_of={{ as_of.isoformat() }}">
+                <span class="object-avatar cash">₴</span><span class="object-copy"><strong>{{ account.name }}</strong><small>{{ account.currency }} · на руках</small></span>
+                <span class="object-number">{% if account.id in balances %}{{ balances[account.id].amount|amount }}{% else %}—{% endif %}</span>
+              </a>
+            {% endfor %}
+          {% elif area == 'assets' %}
+            {% for item in investment_rows %}
+              <a class="object-row {% if target == loop.index0|string %}selected{% endif %}"
+                href="/bank?area=assets&target={{ loop.index0 }}&as_of={{ as_of.isoformat() }}">
+                <span class="object-avatar asset">◈</span>
+                <span class="object-copy"><strong>{{ item.name }}</strong><small>{{ item.custodian if item.type == 'OVGZ / bond' else 'Депозит' }}</small></span>
+                <span class="object-number">{{ item.amount }}</span>
+              </a>
+            {% endfor %}
+          {% elif area == 'due' %}
+            {% for payment in payments %}
+              <a class="object-row {% if selected_payment and selected_payment.id == payment.id %}selected{% endif %}"
+                href="/bank?area=due&target={{ payment.id|urlencode }}&as_of={{ as_of.isoformat() }}">
+                <span class="object-avatar due">◷</span><span class="object-copy"><strong>{{ payment.due.strftime('%d.%m.%Y') }}</strong><small>{{ payment.holding_label }}</small></span>
+                <span class="object-number">{{ payment.outstanding.amount|amount }} {{ payment.outstanding.currency }}</span>
+              </a>
+            {% endfor %}
+          {% elif area == 'activity' %}
+            {% for event in events %}
+              <a class="object-row {% if selected_event and selected_event.id == event.id %}selected{% endif %}"
+                href="/bank?area=activity&target={{ event.id|urlencode }}&as_of={{ as_of.isoformat() }}">
+                <span class="object-avatar activity">⇄</span><span class="object-copy"><strong>{{ event.effective_on.strftime('%d.%m.%Y') }}</strong><small>{{ event.kind.value }}</small></span>
+                <span class="object-number">{% for leg in event.legs %}{{ leg.change.amount|amount }} {{ leg.change.currency }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
+              </a>
+            {% endfor %}
+          {% else %}
+            {% for control in controls %}
+              <a class="object-row {% if selected_control and selected_control.id == control.id %}selected{% endif %}"
+                href="/bank?area=review&target={{ control.id|urlencode }}&as_of={{ as_of.isoformat() }}">
+                <span class="object-avatar review">✓</span><span class="object-copy"><strong>{{ control.as_of.strftime('%d.%m.%Y') }}</strong><small>{{ control.note or 'Месячная сверка' }}</small></span>
+              </a>
+            {% endfor %}
+          {% endif %}
+          </div>
+        </section>
+
+        <section class="inspector" aria-label="Детали выбранного объекта">
+          {% if area == 'money' and selected_account %}
+            <p class="kicker">{{ 'НАЛИЧНЫЕ НА РУКАХ' if selected_account.kind.value == 'cash' else 'БАНКОВСКИЙ СЧЁТ' }}</p>
+            <h2>{{ selected_account.name }}</h2>
+            <div class="detail-value">{% if selected_account.id in balances %}{{ balances[selected_account.id].amount|amount }}{% else %}—{% endif %}<small>{{ selected_account.currency }}</small></div>
+            <p class="detail-footnote">Фактический остаток на выбранную дату, без будущих выплат.</p>
+            <div class="inspector-actions">
+              {% if opening %}{{ action('Движение денег', 'form-event', 'events') }}{% endif %}
+              {{ edit('Изменить', '/bank/edit_account', selected_account.id, 'accounts') }}
+              {{ remove('cash' if selected_account.kind.value == 'cash' else 'account', selected_account.id, 'accounts') }}
+            </div>
+            <h3>Последние операции</h3>
+            {% for event in related_events %}
+              <a class="detail-list-row" href="/bank?area=activity&target={{ event.id|urlencode }}&as_of={{ as_of.isoformat() }}">
+                {{ event.effective_on.strftime('%d.%m.%Y') }} <span>{{ event.kind.value }}</span> <span aria-hidden="true">›</span>
+              </a>
+            {% else %}<p class="placeholder">Операций пока нет.</p>{% endfor %}
+          {% elif area == 'assets' and selected_asset %}
+            <p class="kicker">{{ 'ИМПОРТ ИЗ ВЫПИСКИ' if selected_asset.imported else 'УЧЁТНОЕ ВЛОЖЕНИЕ' }}</p>
+            <h2>{{ selected_asset.name }}</h2>
+            <div class="detail-value">{{ selected_asset.amount }} <small>{{ selected_asset.currency }}</small></div>
+            <dl class="facts">
+              <div><dt>Учреждение</dt><dd>{{ selected_asset.custodian if selected_asset.type == 'OVGZ / bond' else selected_asset.name }}</dd></div>
+              <div><dt>Погашение</dt><dd>{{ selected_asset.maturity }}</dd></div>
+              <div><dt>Себестоимость</dt><dd>{{ selected_asset.cost }}</dd></div>
+              {% if selected_asset.imported %}
+                <div><dt>Подтверждённый остаток</dt><dd>{{ 'Да' if selected_asset.confirmed else 'Только движение' }}</dd></div>
+              {% endif %}
+            </dl>
+            <div class="inspector-actions">
+              {% if selected_asset.imported %}
+                {{ remove('import_position', [selected_asset.custodian, selected_asset.name]|tojson, 'holdings') }}
+              {% else %}
+                {{ edit('Редактировать', '/bank/edit_bond' if selected_asset.type == 'OVGZ / bond' else '/bank/edit_deposit', selected_asset.id, 'holdings') }}
+                {{ remove('holding', selected_asset.id, 'holdings') }}
+              {% endif %}
+            </div>
+            {% if related_payments %}<h3>Выплаты по этому вложению</h3>
+              {% for payment in related_payments %}
+                <a class="detail-list-row" href="/bank?area=due&target={{ payment.id|urlencode }}&as_of={{ as_of.isoformat() }}">
+                  {{ payment.due.strftime('%d.%m.%Y') }} <span>{{ payment.kind }} · {{ payment.expected.amount|amount }} {{ payment.expected.currency }}</span> <span aria-hidden="true">›</span>
+                </a>
+              {% endfor %}
+            {% endif %}
+          {% elif area == 'due' and selected_payment %}
+            <p class="kicker">ПЛАНОВАЯ ВЫПЛАТА</p>
+            <h2>{{ selected_payment.holding_label }}</h2>
+            <div class="detail-value">{{ selected_payment.expected.amount|amount }} <small>{{ selected_payment.expected.currency }}</small></div>
+            <dl class="facts">
+              <div><dt>Дата по графику</dt><dd>{{ selected_payment.due.strftime('%d.%m.%Y') }}</dd></div>
+              <div><dt>Тип</dt><dd>{{ selected_payment.kind }}</dd></div>
+              <div><dt>Фактически получено</dt><dd>{{ selected_payment.received.amount|amount }} {{ selected_payment.received.currency }}</dd></div>
+              <div><dt>Осталось</dt><dd>{{ selected_payment.outstanding.amount|amount }} {{ selected_payment.outstanding.currency }}</dd></div>
+              <div><dt>Статус</dt><dd>{{ selected_payment.status }}</dd></div>
+            </dl>
+            <div class="inspector-actions">
+              <a class="action primary" href="/bank/forms?as_of={{ as_of.isoformat() }}#payments" data-edit-action="/bank/receipt" data-record-id="{{ selected_payment.id }}" data-match-field="payment_id">Записать факт</a>
+              {{ edit('Изменить план', '/bank/edit_payment', selected_payment.id, 'payments') }}
+              {{ remove('payment', selected_payment.id, 'payments') }}
+            </div>
+            <h3>Фактические поступления</h3>
+            {% for receipt in selected_payment.receipts %}
+              <div class="detail-list-row">
+                {{ receipt.item.received_on.strftime('%d.%m.%Y') }}
+                <span>{{ receipt.item.amount.amount|amount }} {{ receipt.item.amount.currency }} · {{ 'зачислено' if receipt.posted else 'не зачислено' }}</span>
+              </div>
+            {% else %}<p class="placeholder">Фактических поступлений нет.</p>{% endfor %}
+          {% elif area == 'activity' and selected_event %}
+            <p class="kicker">ФАКТИЧЕСКАЯ ОПЕРАЦИЯ</p>
+            <h2>{{ selected_event.effective_on.strftime('%d.%m.%Y') }}</h2>
+            <p class="detail-footnote">{{ selected_event.kind.value }}</p>
+            {% for leg in selected_event.legs %}
+              <div class="event-leg"><strong>{{ account_labels.get(leg.account_id, leg.account_id) }}</strong><span>{{ leg.change.amount|amount }} {{ leg.change.currency }}</span></div>
+            {% endfor %}
+            <div class="inspector-actions">
+              {% if not selected_event.receipt_id %}{{ edit('Редактировать', '/bank/edit_event', selected_event.id, 'events') }}{% endif %}
+              {{ remove('cash_event', selected_event.id, 'events') }}
+            </div>
+          {% elif area == 'review' and selected_control %}
+            <p class="kicker">СВЕРКА БАЛАНСОВ</p>
+            <h2>{{ selected_control.as_of.strftime('%d.%m.%Y') }}</h2>
+            <p>{{ selected_control.note or 'Ручной контроль остатков' }}</p>
+            <dl class="facts">
+            {% for row in selected_control.rows %}
+              <div><dt>{{ row.account.name }}</dt><dd>Факт {{ row.observed.amount|amount }} · учёт {{ row.current_calculated.amount|amount }} {{ row.observed.currency }}</dd></div>
+            {% endfor %}
+            </dl>
+            <div class="inspector-actions">
+              {{ remove('control', selected_control.id, 'monthly-controls') }}
+              <a href="/bank/forms?as_of={{ as_of.isoformat() }}#monthly-controls" class="action subtle">Посмотреть формы корректировки</a>
+            </div>
+          {% else %}
+            <div class="welcome-inspector">
+              <span class="welcome-symbol" aria-hidden="true">↳</span>
+              <h2>Выбери запись слева</h2>
+              <p>Только сведения и действия с выбранным объектом. Никаких длинных форм в списке.</p>
+              <p class="placeholder">Если список пуст, начни с кнопки добавления над ним.</p>
+            </div>
+          {% endif %}
+        </section>
+      </div>
+    {% endif %}
+    <footer class="footnote">Fin · локальный финансовый учёт · данные хранятся в личной SQLite, без облачных сервисов.</footer>
+  </main>
+</div>
+<dialog id="workspace-dialog" aria-label="Действие с объектом">
+  <div class="dialog-header"><strong id="workspace-dialog-title">Действие</strong>
+    <button type="button" data-close-dialog aria-label="Закрыть">×</button></div>
+  <div id="workspace-dialog-body"></div>
+</dialog>
+<div id="workspace-toast" role="status" aria-live="polite"></div>
+</body>
+</html>

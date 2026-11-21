@@ -47,7 +47,7 @@ def deposit(bank="mono", **overrides):
 
 def test_bank_dropdown_uses_existing_bank_accounts_but_not_cash_accounts(browser):
     client, _, _ = browser
-    page = client.get("/bank")
+    page = client.get("/bank/forms")
     assert page.status_code == 200
     match = re.search(r'<form method="post" action="/bank/deposit">(.*?)</form>', page.text, re.S)
     assert match is not None
@@ -84,7 +84,7 @@ def test_select_other_bank_uses_entered_name_and_works_without_bank_account(brow
         saved = repo.list_deposits()[0]
         assert saved.bank == "Savings cooperative"
         assert saved.principal.amount == Decimal("12500.25")
-    page = client.get("/bank")
+    page = client.get("/bank/forms")
     assert '<option value="Savings cooperative"' in page.text
 
 
@@ -106,7 +106,7 @@ def test_missing_other_bank_name_is_validation_error_and_keeps_amount(browser):
 def test_existing_deposit_bank_is_selected_for_edit(browser):
     client, _, _ = browser
     assert send(browser, "deposit", **deposit()).status_code == 303
-    page = client.get("/bank")
+    page = client.get("/bank/forms")
     match = re.search(
         r'<form method="post" action="/bank/edit_deposit">(.*?)</form>', page.text, re.S
     )
@@ -139,7 +139,7 @@ def test_grouped_bond_quantity_and_price_are_parsed_without_loss(browser):
 
 def test_new_forms_default_to_today_but_maturities_remain_blank(browser):
     client, _, _ = browser
-    page = client.get("/bank").text
+    page = client.get("/bank/forms").text
     today = date.today().isoformat()
     for name in ("as_of", "acquired_on", "opened_on"):
         assert re.search(rf'<input[^>]*name="{name}"[^>]*value="{today}"', page)
@@ -159,13 +159,13 @@ def test_new_forms_default_to_today_but_maturities_remain_blank(browser):
         ).status_code
         == 303
     )
-    page = client.get("/bank").text
+    page = client.get("/bank/forms").text
     assert re.search(rf'<input[^>]*name="effective_on"[^>]*value="{today}"', page)
 
 
 def test_grouping_marker_covers_monetary_inputs_without_turning_dates_into_text(browser):
     client, _, _ = browser
-    html = client.get("/bank").text
+    html = client.get("/bank/forms").text
     assert re.search(r'<input[^>]*name="principal"[^>]*data-grouped', html)
     assert re.search(r'<input[^>]*name="quantity"[^>]*data-grouped', html)
     assert re.search(r'<input[^>]*name="annual_rate"[^>]*data-grouped', html)
@@ -173,11 +173,11 @@ def test_grouping_marker_covers_monetary_inputs_without_turning_dates_into_text(
     assert date_field is not None
     assert 'type="date"' in date_field.group()
     assert "data-grouped" not in date_field.group()
-    script = client.get("/assets/bank.js")
+    script = client.get("/assets/workspace.js")
     assert script.status_code == 200
     assert "function groupDigits(value)" in script.text
     assert r"/^(-?)(\d+)([.,]\d*)?$/" in script.text
     assert r"/\B(?=(\d{3})+(?!\d))/" in script.text
     assert r"/\s/g" in script.text
     assert r"/\\s/g" not in script.text
-    assert "prepareForms(next)" in script.text
+    assert 'cloned.querySelectorAll("input[data-grouped]").forEach(formatNumber)' in script.text

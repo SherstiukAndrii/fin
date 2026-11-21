@@ -42,7 +42,7 @@ def add_opening(bank_ui, **amounts):
 def test_missing_database_screen_does_not_create_file(tmp_path):
     path = tmp_path / "missing" / "fin.db"
     with TestClient(create_app(path), base_url="http://localhost") as client:
-        page = client.get("/bank")
+        page = client.get("/bank/forms")
         assert page.status_code == 200
         assert "Fin: DB Init" in page.text
         assert not path.exists()
@@ -54,7 +54,7 @@ def test_missing_database_screen_does_not_create_file(tmp_path):
 
 def test_read_only_page_and_security_headers(bank_ui):
     client, path, token = bank_ui
-    page = client.get("/bank")
+    page = client.get("/bank/forms")
     assert page.status_code == 200
     assert f'name="csrf" value="{token}"' in page.text
     assert "no-store" == page.headers["cache-control"]
@@ -62,7 +62,7 @@ def test_read_only_page_and_security_headers(bank_ui):
     assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
     assert path.is_file()
     assert client.get("/", follow_redirects=False).status_code in (302, 307)
-    assert client.get("/bank?as_of=not-a-date").status_code == 422
+    assert client.get("/bank/forms?as_of=not-a-date").status_code == 422
     assert client.get("/bank", headers={"host": "example.org"}).status_code == 400
 
 
@@ -83,7 +83,7 @@ def test_accounts_and_opening_can_be_entered_only_in_order(bank_ui):
     with SQLiteCashRepository(path) as repo:
         assert repo.get_opening_snapshot().as_of == date(2027, 1, 1)
         assert repo.balances_on(date(2027, 1, 1))["bank"].amount == Decimal("100.000")
-    assert "100.000" in client.get("/bank?as_of=2027-01-01").text
+    assert "100.000" in client.get("/bank/forms?as_of=2027-01-01").text
     assert add_account(bank_ui, account_id="later").status_code == 422
     assert add_opening(bank_ui, balance_bank="100", balance_wallet="25").status_code == 422
 
@@ -173,7 +173,7 @@ def test_deposit_and_bond_forms_do_not_automatically_book_cash(bank_ui):
         assert repo.get_bond_lot("bond1").cost_basis is None
         assert repo.get_deposit("dep1").annual_rate == Decimal("0.15")
         assert repo.balances_on(date(2027, 3, 1))["bank"].amount == Decimal("10000")
-    page = client.get("/bank")
+    page = client.get("/bank/forms")
     assert "bond1" in page.text and "dep1" in page.text
 
 
@@ -248,7 +248,7 @@ def test_coupon_receipt_requires_separate_cash_credit_and_cannot_repeat(bank_ui)
     with SQLiteCashRepository(path) as repo:
         assert repo.balances_on(date(2027, 3, 4))["bank"].amount == Decimal("150")
         assert len(repo.list_cash_events()) == 1
-    assert "Зачислено на счёт" in client.get("/bank?as_of=2027-03-04").text
+    assert "Зачислено на счёт" in client.get("/bank/forms?as_of=2027-03-04").text
 
 
 def test_errors_escaped_and_invalid_amount_does_not_persist(bank_ui):
@@ -294,7 +294,7 @@ def test_user_supplied_account_name_is_html_escaped(bank_ui):
         ).status_code
         == 303
     )
-    page = client.get("/bank")
+    page = client.get("/bank/forms")
     assert "<script>alert(1)</script>" not in page.text
     assert "&lt;script&gt;" in page.text
 
@@ -350,7 +350,7 @@ def test_generated_ids_without_manual_input(bank_ui):
         account = repo.list_accounts()[0]
         assert account.id.startswith("account_")
         assert account.kind == AccountKind.CASH
-    page = client.get("/bank")
+    page = client.get("/bank/forms")
     # A generated CSRF token may contain "ID"; inspect only the account form.
     account_form = page.text.split('action="/bank/account">', 1)[1].split("</form>", 1)[0]
     assert 'name="id"' not in account_form
@@ -358,12 +358,12 @@ def test_generated_ids_without_manual_input(bank_ui):
 
 def test_javascript_asset_is_available_and_csp_allows_self(bank_ui):
     client, _, _ = bank_ui
-    js = client.get("/assets/bank.js")
+    js = client.get("/assets/workspace.js")
     assert js.status_code == 200
-    assert "scrollTo" in js.text
+    assert "loadBankDocument" in js.text
     assert "event.preventDefault()" in js.text
-    assert "inline-error" in js.text
-    page = client.get("/bank")
+    assert "showMessage" in js.text
+    page = client.get("/bank/forms")
     assert "script-src 'self'" in page.headers["content-security-policy"]
 
 
@@ -379,7 +379,7 @@ def test_money_formatter_groups_and_abbreviates_without_losing_value():
 
 def test_csp_permits_same_origin_ajax_form_requests(bank_ui):
     client, _, _ = bank_ui
-    page = client.get("/bank")
+    page = client.get("/bank/forms")
     csp = page.headers["content-security-policy"]
     assert "default-src 'none'" in csp
     assert "connect-src 'self'" in csp
@@ -417,7 +417,7 @@ def test_inline_actual_receipt_can_differ_from_plan_and_show_variance(bank_ui):
         ).status_code
         == 303
     )
-    page = client.get("/bank?as_of=2027-03-01")
+    page = client.get("/bank/forms?as_of=2027-03-01")
     assert page.status_code == 200
     assert "<th>Отклонение</th>" in page.text
     assert "<summary>Записать факт</summary>" in page.text
@@ -438,7 +438,7 @@ def test_inline_actual_receipt_can_differ_from_plan_and_show_variance(bank_ui):
         ).status_code
         == 303
     )
-    page = client.get("/bank?as_of=2027-03-03")
+    page = client.get("/bank/forms?as_of=2027-03-03")
     assert ">-50</td>" in page.text
     assert 'name="amount" value="50"' in page.text
 
@@ -462,6 +462,6 @@ def test_inline_actual_receipt_can_differ_from_plan_and_show_variance(bank_ui):
         assert balance.excess.amount == Decimal("15")
         assert balance.status == PaymentStatus.EXCESS
         assert repo.list_cash_events() == ()
-    page = client.get("/bank?as_of=2027-03-05")
+    page = client.get("/bank/forms?as_of=2027-03-05")
     assert ">15</td>" in page.text
     assert "Сверх плана" in page.text
