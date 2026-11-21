@@ -38,6 +38,7 @@ def assert_saved(client, route, **values):
 
 def test_cash_uses_separate_creation_and_distinct_display(browser):
     client, path = browser
+    assert_saved(client, "bank", id="fictional_bank", name="Imaginary Institution")
     page = client.get("/bank/forms")
     assert 'data-view="accounts">Деньги</a>' in page.text
     assert 'id="bank-accounts"' in page.text

@@ -140,3 +140,34 @@ Display **Total Nominal and Total Real side by side**; they are views of one cap
 - Tests should cover currencies, snapshots, post-snapshot purchase/deposit debits, **multiple coupons before an OVGZ's redemption and independent coupon/principal schedules**, scheduled/partial/late receipts, principal-versus-profit separation, no automatic reinvestment, Free tiers and selling costs, dated FX/staleness, missing values, Fire periods, real-versus-nominal values and monthly reconciliation.
 
 Unresolved **technical parameters** (not unapproved Q01–Q16 choices) are tracked in [implementation details](open-questions.md).
+
+## 8. Banks, monetary accounts and securities custody (SQLite v6)
+
+A **Bank** is an institution rather than a money balance. The same bank
+may own multiple bank accounts even when their currencies are identical.
+Money accounts have their own IDs and exact per-currency balances; physical
+cash locations never belong to a bank. A **SecuritiesAccount** belongs to a
+bank but is a custody address with no cash balance or automatic security
+valuation. A custody entry is not evidence of an owned bond and cannot
+double count imported positions.
+
+For a new money account whose activation date is `a > s` (opening
+snapshot date `s`), define its actual closing balance:
+
+- unavailable for `d < a`, even if `d >= s`;
+- zero at `d = a` until an explicitly posted same-day cash movement;
+- sum of its eligible, native-currency cash-event legs dated `a <= e <= d`
+  for subsequent `d > a`.
+
+Accounts already present at `s` retain their explicit opening amounts.
+Adding an account must not insert a new `opening_balances` row, create an
+income event or replay an investment purchase. Transfers use two equal and
+opposite legs in one currency; no implicit FX. The repository rejects an
+event earlier than an account's activation, including when editing an event.
+A monthly observation on date `t` includes only accounts active at `t`
+and does not retroactively add later accounts to old observations.
+
+The v6 SQLite upgrade is transactional and protected by a private,
+pre-upgrade copy. Historic financial amounts remain stored as decimal
+strings. Names and HTTPS bank links are metadata, never login credentials.
+Deletion protects linked accounts and requires explicit signed review.

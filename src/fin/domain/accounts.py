@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
+from urllib.parse import urlsplit
 
 from fin.domain.money import CurrencyMismatchError, Money
 
@@ -37,12 +38,62 @@ class CashEventKind(StrEnum):
     RECEIPT = "receipt"
 
 
+def _web_link(value: str | None) -> None:
+    """Never render a user-managed javascript/file/data URL as a bank link."""
+    if value is None:
+        return
+    if not isinstance(value, str) or len(value) > 1024:
+        raise ValueError("Bank link must be a URL up to 1024 characters")
+    url = urlsplit(value)
+    if (
+        value != value.strip()
+        or url.scheme != "https"
+        or not url.hostname
+        or url.username is not None
+        or url.password is not None
+        or url.fragment
+        or any(ord(char) < 32 for char in value)
+    ):
+        raise ValueError("Bank links must be clean HTTPS addresses")
+
+
+@dataclass(frozen=True, slots=True)
+class Bank:
+    id: str
+    name: str
+    website_url: str | None = None
+    cabinet_url: str | None = None
+
+    def __post_init__(self) -> None:
+        _id(self.id)
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("Bank name must not be blank")
+        _web_link(self.website_url)
+        _web_link(self.cabinet_url)
+
+
+@dataclass(frozen=True, slots=True)
+class SecuritiesAccount:
+    """Custody record inside a bank; never counted as a cash balance."""
+    id: str
+    bank_id: str
+    name: str
+
+    def __post_init__(self) -> None:
+        _id(self.id)
+        _id(self.bank_id)
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("Securities account name must not be blank")
+
+
 @dataclass(frozen=True, slots=True)
 class CashAccount:
     id: str
     name: str
     currency: str
     kind: AccountKind
+    bank_id: str | None = None
+    opened_on: date | None = None
 
     def __post_init__(self) -> None:
         _id(self.id)
@@ -51,6 +102,12 @@ class CashAccount:
         Money(Decimal("0"), self.currency)  # Reuse the shared currency validation.
         if not isinstance(self.kind, AccountKind):
             raise ValueError("Unsupported account kind")
+        if self.bank_id is not None:
+            _id(self.bank_id)
+        if self.kind == AccountKind.CASH and self.bank_id is not None:
+            raise ValueError("Physical cash cannot belong to a bank")
+        if self.opened_on is not None:
+            _day(self.opened_on)
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,9 +223,16 @@ def actual_balances(
         if row.amount.currency != account_map[row.account_id].currency:
             raise CurrencyMismatchError("Opening balance currency does not match account")
         initial[row.account_id] = row.amount
-    if set(initial) != set(account_map):
-        raise ValueError("Opening snapshot must contain every cash account")
+    later = {
+        account.id
+        for account in account_map.values()
+        if account.opened_on is not None and account.opened_on > opening.as_of
+    }
+    if set(initial) != set(account_map) - later:
+        raise ValueError("Opening snapshot must contain every account active at opening")
     result = dict(initial)
+    for account_id in later:
+        result[account_id] = Money(Decimal("0"), account_map[account_id].currency)
     seen_events: set[str] = set()
     seen_receipts: set[str] = set()
     for event in events:
@@ -185,7 +249,14 @@ def actual_balances(
                 raise ValueError("Cash event references an unknown account")
             if leg.change.currency != account.currency:
                 raise CurrencyMismatchError("Cash event currency does not match account")
+            if account.opened_on is not None and event.effective_on < account.opened_on:
+                raise ValueError("Cash event predates account activation")
         if opening.as_of < event.effective_on <= as_of:
             for leg in event.legs:
                 result[leg.account_id] += leg.change
-    return result
+    return {
+        account_id: money
+        for account_id, money in result.items()
+        if account_map[account_id].opened_on is None
+        or account_map[account_id].opened_on <= as_of
+    }

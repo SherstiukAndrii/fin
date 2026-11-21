@@ -340,6 +340,10 @@ def test_generated_ids_without_manual_input(bank_ui):
     from fin.domain.accounts import AccountKind
 
     client, path, token = bank_ui
+    assert client.post(
+        "/bank/bank", data={"csrf": token, "id": "demo", "name": "Imaginary Bank"},
+        follow_redirects=False,
+    ).status_code == 303
     result = client.post(
         "/bank/account",
         data={"csrf": token, "name": "Wallet", "kind": "cash", "currency": "UAH"},

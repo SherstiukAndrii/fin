@@ -189,43 +189,137 @@
       <span class="summary-period">На {{ as_of.strftime('%d.%m.%Y') }}</span></div>
       <p class="small">Банковские счета и наличные на руках учитываются отдельно.
         Плановые выплаты не изменяют реальные остатки.</p>
+      <section class="money-group" id="bank-registry">
+        <h3>Банки <span class="pill">{{ banks|length }}</span></h3>
+        <p class="small">Один банк может иметь много денежных и депозитарных счетов.
+          Ссылки открываются только по HTTPS. Деньги самого банка отдельно не считаются.</p>
+        {% for bank in banks %}
+          <div class="record-row">
+            <strong>{{ bank.name }}</strong>
+            <details><summary>Редактировать банк</summary>
+              <form method="post" action="/bank/edit_bank">{{ token() }}
+                <input type="hidden" name="id" value="{{ bank.id }}">
+                <label>Название банка<input name="name" value="{{ bank.name }}" required></label>
+                <label>Официальный сайт (HTTPS)
+                  <input type="url" name="website_url" value="{{ bank.website_url or '' }}" placeholder="https://example.org"></label>
+                <label>Личный кабинет (HTTPS)
+                  <input type="url" name="cabinet_url" value="{{ bank.cabinet_url or '' }}" placeholder="https://bank.example.org"></label>
+                <button class="mini">Сохранить банк</button>
+              </form>
+            </details>
+            {{ delete_action('bank', bank.id, 'Удалить банк') }}
+          </div>
+        {% endfor %}
+        <details id="form-bank" {% if not banks or failed_form == 'bank' %}open{% endif %}>
+          <summary class="entrypoint">+ Добавить банк</summary>
+          <form method="post" action="/bank/bank">{{ token() }}
+            <div class="grid">
+              <label>Название банка<input name="name" value="{{ prior('bank','name') }}" required></label>
+              <label>Официальный сайт (HTTPS)
+                <input type="url" name="website_url" value="{{ prior('bank','website_url') }}"></label>
+              <label>Личный кабинет (HTTPS)
+                <input type="url" name="cabinet_url" value="{{ prior('bank','cabinet_url') }}"></label>
+            </div>
+            <button>Добавить банк</button>
+          </form>
+        </details>
+      </section>
       <div class="money-groups">
         <div class="money-group" id="bank-accounts">
           <h3>Банковские счета <span class="pill">{{ bank_accounts|length }}</span></h3>
-          <p class="small group-helper">Здесь отображаются денежные счета. Несколько счетов одного банка и отдельные валюты будут поддержаны единым справочником банков.</p>
+          <p class="small group-helper">У одного банка может быть несколько счетов даже в одной валюте.
+            Новый счёт после начального снимка активируется с выбранной даты и начинается с нуля.
+            Деньги переноси отдельной операцией.</p>
           {% if bank_accounts %}
           <div class="scroll"><table><thead><tr><th>Банк / счёт</th><th>Валюта</th><th>Остаток на дату</th><th>Действия</th></tr></thead>
           <tbody>{% for a in bank_accounts %}<tr>
-            <td><strong>{{ a.name }}</strong></td><td>{{ a.currency }}</td>
+            <td><strong>{{ a.name }}</strong>
+                <small>{{ banks_by_id[a.bank_id].name if a.bank_id in banks_by_id else 'Банк не выбран' }}
+                {% if a.opened_on %} · с {{ a.opened_on }}{% endif %}</small></td>
+            <td>{{ a.currency }}</td>
             <td class="num">{% if a.id in balances %}{{ balances[a.id].amount|amount }} {{ a.currency }}{% else %}—{% endif %}</td>
             <td><details><summary>Изменить</summary>
               <form action="/bank/edit_account" method="post">{{ token() }}
                 <input type="hidden" name="id" value="{{ a.id }}">
                 <input type="hidden" name="currency" value="{{ a.currency }}">
                 <input type="hidden" name="kind" value="bank">
-                <label>Название банка / счёта<input name="name" value="{{ a.name }}" required></label>
+                <label>Название счёта<input name="name" value="{{ a.name }}" required></label>
+                <label>Банк<select name="bank_id">
+                  <option value="">Без привязки (старые записи)</option>
+                  {% for bank in banks %}
+                    <option value="{{ bank.id }}" {% if a.bank_id == bank.id %}selected{% endif %}>{{ bank.name }}</option>
+                  {% endfor %}
+                </select></label>
                 <button class="mini">Сохранить</button>
               </form></details>
               {{ delete_action('account', a.id, 'Удалить счёт') }}
             </td>
           </tr>{% endfor %}</tbody></table></div>
           {% else %}<p class="small">Банковских счетов пока нет.</p>{% endif %}
-          {% if not opening %}
+          {% if banks %}
           <details id="form-account" {% if not bank_accounts or failed_form == 'account' %}open{% endif %}>
             <summary class="entrypoint">+ Добавить банковский счёт</summary>
             <form method="post" action="/bank/account">{{ token() }}
               <input type="hidden" name="kind" value="bank">
               <div class="grid">
-                <label>Название банка / счёта
-                  <input name="name" placeholder="Моно UAH" value="{{ prior('account','name') }}" required>
+                <label>Банк<select name="bank_id" required>
+                  {% for bank in banks %}
+                    <option value="{{ bank.id }}" {{ chosen('account','bank_id',bank.id,banks[0].id) }}>{{ bank.name }}</option>
+                  {% endfor %}
+                </select></label>
+                <label>Название счёта
+                  <input name="name" placeholder="Основной, накопительный, USD…" value="{{ prior('account','name') }}" required>
                 </label>
                 <label>Валюта<input name="currency" value="{{ prior('account','currency','UAH') }}" required></label>
+                {% if opening %}
+                  <label>Начать учёт нового счёта с даты
+                    <input name="opened_on" type="date" value="{{ prior('account','opened_on',activation_default.isoformat()) }}" min="{{ (opening.as_of + one_day).isoformat() }}" required>
+                  </label>
+                {% endif %}
               </div>
               <button>Добавить банковский счёт</button>
+              {% if opening %}<p class="small">Счёт стартует с нуля, не переписывая предыдущие остатки. Для существующих денег введи отдельный перевод или подтверждённую корректировку.</p>{% endif %}
             </form>
           </details>
           {% else %}
-          <p class="small account-limit">Новый счёт после начального снимка пока создать нельзя: это требует безопасного дополнения истории остатков. Существующие счета можно переименовать выше; добавление счетов после снимка — следующая функциональная задача.</p>
+            <p class="small">Сначала добавь банк через справочник выше.</p>
+          {% endif %}
+        </div>
+        <div class="money-group" id="securities-accounts">
+          <h3>Счета ценных бумаг <span class="pill">{{ securities_accounts|length }}</span></h3>
+          <p class="small">Это счета хранения ОВГЗ/акций: не банковские денежные остатки и не новые вложения.</p>
+          {% for item in securities_accounts %}
+            <div class="record-row">
+              <strong>{{ item.name }}</strong>
+              <small>{{ banks_by_id[item.bank_id].name }}</small>
+              <details><summary>Редактировать</summary>
+                <form method="post" action="/bank/edit_securities_account">{{ token() }}
+                  <input type="hidden" name="id" value="{{ item.id }}">
+                  <label>Банк<select name="bank_id" required>
+                    {% for bank in banks %}
+                      <option value="{{ bank.id }}" {% if bank.id == item.bank_id %}selected{% endif %}>{{ bank.name }}</option>
+                    {% endfor %}
+                  </select></label>
+                  <label>Название<input name="name" value="{{ item.name }}" required></label>
+                  <button class="mini">Сохранить</button>
+                </form>
+              </details>
+              {{ delete_action('securities_account', item.id, 'Удалить счёт ценных бумаг') }}
+            </div>
+          {% endfor %}
+          {% if banks %}
+            <details id="form-securities-account" {% if failed_form == 'securities_account' %}open{% endif %}>
+              <summary class="entrypoint">+ Добавить счёт ценных бумаг</summary>
+              <form method="post" action="/bank/securities_account">{{ token() }}
+                <label>Банк<select name="bank_id" required>
+                  {% for bank in banks %}
+                    <option value="{{ bank.id }}" {{ chosen('securities_account','bank_id',bank.id,banks[0].id) }}>{{ bank.name }}</option>
+                  {% endfor %}
+                </select></label>
+                <label>Название счёта<input name="name" value="{{ prior('securities_account','name') }}" required placeholder="Депозитарный счёт"></label>
+                <button>Добавить счёт ценных бумаг</button>
+              </form>
+            </details>
           {% endif %}
         </div>
         <div class="money-group" id="cash-on-hand">
@@ -247,7 +341,6 @@
             </td>
           </tr>{% endfor %}</tbody></table></div>
           {% else %}<p class="small">Наличные пока не внесены.</p>{% endif %}
-          {% if not opening %}
           <details id="form-cash" {% if failed_form == 'cash' %}open{% endif %}>
             <summary class="entrypoint">+ Добавить наличные</summary>
             <form method="post" action="/bank/cash">{{ token() }}
@@ -256,12 +349,15 @@
                 <label>Где хранятся (необязательно)
                   <input name="name" placeholder="На руках" value="{{ prior('cash','name') }}">
                 </label>
+                {% if opening %}
+                  <label>Учёт наличных с даты
+                    <input type="date" name="opened_on" value="{{ prior('cash','opened_on',activation_default.isoformat()) }}" min="{{ (opening.as_of + one_day).isoformat() }}" required></label>
+                {% endif %}
               </div>
               <button>Добавить наличные</button>
-              <p class="small">Сумму введи в начальном снимке ниже. Это не банковский счёт.</p>
+              <p class="small">{% if opening %}Начинается с нуля; введи отдельный перевод или проверенную корректировку.{% else %}Сумму введи в начальном снимке ниже.{% endif %} Это не банковский счёт.</p>
             </form>
           </details>
-          {% endif %}
         </div>
       </div>
       <p class="small">Валюты не суммируются без курса обмена.</p>
@@ -354,7 +450,7 @@
         <form method="post" action="/bank/control?as_of={{ as_of.isoformat() }}">{{ token() }}
           <div class="grid">
             <label>Конец месяца<input type="date" name="as_of" value="{{ prior('control','as_of',control_default) }}" required></label>
-            {% for a in accounts %}
+            {% for a in active_accounts %}
             <label>Фактически {{ "наличными" if a.kind.value == "cash" else "в банке" }}: {{ a.name }} ({{ a.currency }})
               <input name="balance_{{ a.id }}" value="{{ prior('control','balance_' ~ a.id) }}"
                      required data-grouped inputmode="decimal" placeholder="0"></label>

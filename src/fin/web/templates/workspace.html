@@ -141,12 +141,15 @@
       </div>
       <div class="page-heading-actions">
         {% if area == 'money' %}
+          {{ action('+ Банк', 'form-bank', 'accounts', 'primary') }}
+          {% if banks %}
+            {{ action('+ Денежный счёт', 'form-account', 'accounts', 'subtle') }}
+            {{ action('+ Счёт ценных бумаг', 'form-securities-account', 'accounts', 'subtle') }}
+          {% endif %}
+          {{ action('+ Наличные', 'form-cash', 'accounts', 'subtle') }}
           {% if not opening %}
-            {{ action('+ Банк', 'form-account', 'accounts', 'primary') }}
-            {{ action('+ Наличные', 'form-cash', 'accounts', 'subtle') }}
             {% if accounts %}{{ action('Начальные остатки', 'form-opening', 'accounts', 'subtle') }}{% endif %}
           {% else %}
-            <span class="setup-limit">Новые счета после начального снимка пока не поддерживаются</span>
             <a class="action subtle" href="/bank/forms?as_of={{ as_of.isoformat() }}#accounts"
                data-edit-action="/bank/edit_opening">Исправить начальные остатки</a>
             {{ remove('opening', '1', 'accounts') }}
@@ -175,19 +178,45 @@
           </div>
           <div class="list-rows" id="object-list">
           {% if area == 'money' %}
-            {% if bank_accounts %}<p class="list-group-label">БАНКОВСКИЕ СЧЕТА</p>{% endif %}
-            {% for account in bank_accounts %}
-              <a class="object-row {% if selected_account and selected_account.id == account.id %}selected{% endif %}"
-                href="/bank?area=money&target={{ account.id|urlencode }}&as_of={{ as_of.isoformat() }}">
-                <span class="object-avatar bank">Б</span><span class="object-copy"><strong>{{ account.name }}</strong><small>{{ account.currency }} · банк</small></span>
-                <span class="object-number">{% if account.id in balances %}{{ balances[account.id].amount|amount }}{% else %}—{% endif %}</span>
+            {% if banks %}<p class="list-group-label">БАНКИ И СЧЕТА</p>{% endif %}
+            {% for bank in banks %}
+              <a class="object-row bank-group {% if selected_bank and selected_bank.id == bank.id %}selected{% endif %}"
+                 href="/bank?area=money&target={{ ('bank:' ~ bank.id)|urlencode }}&as_of={{ as_of.isoformat() }}">
+                <span class="object-avatar bank">Б</span>
+                <span class="object-copy"><strong>{{ bank.name }}</strong><small>Банк · открыть карточку</small></span>
               </a>
+              {% for account in bank_accounts if account.bank_id == bank.id %}
+                <a class="object-row nested {% if selected_account and selected_account.id == account.id %}selected{% endif %}"
+                  href="/bank?area=money&target={{ account.id|urlencode }}&as_of={{ as_of.isoformat() }}">
+                  <span class="object-avatar bank">₴</span>
+                  <span class="object-copy"><strong>{{ account.name }}</strong><small>{{ account.currency }} · денежный счёт{% if account.opened_on %} · с {{ account.opened_on }}{% endif %}</small></span>
+                  <span class="object-number">{% if account.id in balances %}{{ balances[account.id].amount|amount }}{% else %}—{% endif %}</span>
+                </a>
+              {% endfor %}
+              {% for account in securities_accounts if account.bank_id == bank.id %}
+                <a class="object-row nested {% if selected_securities_account and selected_securities_account.id == account.id %}selected{% endif %}"
+                  href="/bank?area=money&target={{ ('securities:' ~ account.id)|urlencode }}&as_of={{ as_of.isoformat() }}">
+                  <span class="object-avatar asset">◈</span>
+                  <span class="object-copy"><strong>{{ account.name }}</strong><small>Счёт ценных бумаг · без денежного остатка</small></span>
+                </a>
+              {% endfor %}
             {% endfor %}
-            {% if cash_locations %}<p class="list-group-label">НАЛИЧНЫЕ</p>{% endif %}
+            {% if bank_accounts|selectattr('bank_id', 'none')|list %}
+              <p class="list-group-label">БАНКОВСКИЕ СЧЕТА · БЕЗ ПРИВЯЗКИ</p>
+              {% for account in bank_accounts if not account.bank_id %}
+                <a class="object-row {% if selected_account and selected_account.id == account.id %}selected{% endif %}"
+                  href="/bank?area=money&target={{ account.id|urlencode }}&as_of={{ as_of.isoformat() }}">
+                  <span class="object-avatar bank">₴</span>
+                  <span class="object-copy"><strong>{{ account.name }}</strong><small>{{ account.currency }} · банковский счёт</small></span>
+                  <span class="object-number">{% if account.id in balances %}{{ balances[account.id].amount|amount }}{% else %}—{% endif %}</span>
+                </a>
+              {% endfor %}
+            {% endif %}
+            {% if cash_locations %}<p class="list-group-label">НАЛИЧНЫЕ НА РУКАХ</p>{% endif %}
             {% for account in cash_locations %}
               <a class="object-row {% if selected_account and selected_account.id == account.id %}selected{% endif %}"
                 href="/bank?area=money&target={{ account.id|urlencode }}&as_of={{ as_of.isoformat() }}">
-                <span class="object-avatar cash">₴</span><span class="object-copy"><strong>{{ account.name }}</strong><small>{{ account.currency }} · на руках</small></span>
+                <span class="object-avatar cash">₴</span><span class="object-copy"><strong>{{ account.name }}</strong><small>{{ account.currency }} · на руках{% if account.opened_on %} · с {{ account.opened_on }}{% endif %}</small></span>
                 <span class="object-number">{% if account.id in balances %}{{ balances[account.id].amount|amount }}{% else %}—{% endif %}</span>
               </a>
             {% endfor %}
@@ -228,11 +257,66 @@
         </section>
 
         <section class="inspector" aria-label="Детали выбранного объекта">
-          {% if area == 'money' and selected_account %}
+          {% if area == 'money' and selected_bank %}
+            <p class="kicker">БАНК · НЕ ДЕНЕЖНЫЙ ОСТАТОК</p>
+            <h2>{{ selected_bank.name }}</h2>
+            <p class="detail-footnote">Внутри банка могут быть гривневые, валютные и депозитарные счета.
+              Деньги считаются отдельно по каждому денежному счёту.</p>
+            <div class="inspector-actions">
+              <a class="action primary" href="/bank/forms?as_of={{ as_of.isoformat() }}#accounts"
+                data-edit-action="/bank/edit_bank" data-record-id="{{ selected_bank.id }}">Изменить банк и ссылки</a>
+              {{ remove('bank', selected_bank.id, 'accounts') }}
+            </div>
+            <h3>Официальные ссылки</h3>
+            <div class="external-links">
+              {% if selected_bank.website_url %}<a href="{{ selected_bank.website_url }}" target="_blank" rel="noopener noreferrer">Сайт банка ↗</a>{% endif %}
+              {% if selected_bank.cabinet_url %}<a href="{{ selected_bank.cabinet_url }}" target="_blank" rel="noopener noreferrer">Личный кабинет ↗</a>{% endif %}
+              {% if not selected_bank.website_url and not selected_bank.cabinet_url %}
+                <p class="placeholder">Ссылки ещё не добавлены.</p>
+              {% endif %}
+            </div>
+            <h3>Счета банка</h3>
+            {% for account in bank_accounts if account.bank_id == selected_bank.id %}
+              <a class="detail-list-row" href="/bank?area=money&target={{ account.id|urlencode }}&as_of={{ as_of.isoformat() }}">
+                {{ account.name }} <span>{{ account.currency }} · денежный</span><span aria-hidden="true">›</span>
+              </a>
+            {% endfor %}
+            {% for account in securities_accounts if account.bank_id == selected_bank.id %}
+              <a class="detail-list-row" href="/bank?area=money&target={{ ('securities:' ~ account.id)|urlencode }}&as_of={{ as_of.isoformat() }}">
+                {{ account.name }} <span>Ценные бумаги</span><span aria-hidden="true">›</span>
+              </a>
+            {% endfor %}
+          {% elif area == 'money' and selected_securities_account %}
+            <p class="kicker">ДЕПОЗИТАРНЫЙ СЧЁТ · НЕ ДЕНЬГИ</p>
+            <h2>{{ selected_securities_account.name }}</h2>
+            <p>{{ banks_by_id[selected_securities_account.bank_id].name }}</p>
+            <p class="detail-footnote">Счёт хранения ценных бумаг не увеличивает денежные остатки.
+              Сами ОВГЗ остаются во вкладке «Портфель».</p>
+            <div class="inspector-actions">
+              <a class="action primary" href="/bank/forms?as_of={{ as_of.isoformat() }}#accounts"
+                data-edit-action="/bank/edit_securities_account"
+                data-record-id="{{ selected_securities_account.id }}">Изменить</a>
+              {{ remove('securities_account', selected_securities_account.id, 'accounts') }}
+            </div>
+          {% elif area == 'money' and selected_account %}
             <p class="kicker">{{ 'НАЛИЧНЫЕ НА РУКАХ' if selected_account.kind.value == 'cash' else 'БАНКОВСКИЙ СЧЁТ' }}</p>
             <h2>{{ selected_account.name }}</h2>
+            {% if selected_account.bank_id in banks_by_id %}
+              <p class="detail-footnote">Банк: {{ banks_by_id[selected_account.bank_id].name }}</p>
+            {% endif %}
+            {% if selected_account.opened_on %}
+              <p class="detail-footnote">Учёт с {{ selected_account.opened_on }}. До этой даты остаток не отображается.</p>
+            {% endif %}
             <div class="detail-value">{% if selected_account.id in balances %}{{ balances[selected_account.id].amount|amount }}{% else %}—{% endif %}<small>{{ selected_account.currency }}</small></div>
-            <p class="detail-footnote">Фактический остаток на выбранную дату, без будущих выплат.</p>
+            <p class="detail-footnote">Фактический остаток на выбранную дату, без будущих выплат.
+              Новые счета активируются с нуля: переводы и подтверждённые корректировки вводятся отдельно.</p>
+            {% if selected_account.bank_id in banks_by_id %}
+              {% set institution = banks_by_id[selected_account.bank_id] %}
+              <div class="external-links">
+                {% if institution.website_url %}<a href="{{ institution.website_url }}" target="_blank" rel="noopener noreferrer">Сайт банка ↗</a>{% endif %}
+                {% if institution.cabinet_url %}<a href="{{ institution.cabinet_url }}" target="_blank" rel="noopener noreferrer">Личный кабинет ↗</a>{% endif %}
+              </div>
+            {% endif %}
             <div class="inspector-actions">
               {% if opening %}{{ action('Движение денег', 'form-event', 'events') }}{% endif %}
               {{ edit('Изменить', '/bank/edit_account', selected_account.id, 'accounts') }}

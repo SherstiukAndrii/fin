@@ -2,7 +2,7 @@
 
 Single-user, offline-first personal finance app for Windows and Linux. The planned MVP contains **Bank** and **Overview**; see [MVP requirements](docs/mvp.md) and the [domain model](docs/domain-model.md).
 
-**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank/Cash persistence v5**. Actual cash ledger and dated opening snapshot are available in Python. First local Bank browser UI is available; Overview/FX still to come. Future investment calculators and statement analysis are documented under `docs/`.
+**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank/Cash persistence v6**. Actual cash ledger and dated opening snapshot are available in Python. First local Bank browser UI is available; Overview/FX still to come. Future investment calculators and statement analysis are documented under `docs/`.
 
 ## Development with Windows + WSL (Ubuntu) + VS Code
 
@@ -285,14 +285,14 @@ untracked files inside the repository (including `data/fin.sqlite3` and
 Old staging tables in existing SQLite databases are left untouched by this
 cleanup. No financial records or user databases are deleted.
 
-## Offline import of securities account statements (SQLite v5)
+## Offline import of securities account statements (introduced in SQLite v5)
 
 The Bank screen supports uploading up to 16 text-layer PDF statements from the
 recognized securities institutions. The PDF is processed **in memory**; neither
 its raw bytes nor depositor names, tax IDs, passport numbers, account identifiers,
 signatures or trade-contract references are saved. Only document/event
 fingerprints and normalized custodian, ISIN, date, quantity, record kind and
-nominal-per-unit (when explicitly present) are stored locally in SQLite v5.
+nominal-per-unit (when explicitly present) are stored locally in the versioned offline SQLite database.
 Public Git and test fixtures contain only fictional values.
 
 Use **Preview** to review all parsed rows. **Confirm import** explicitly writes
@@ -348,7 +348,7 @@ mistake. Use the delete preview to inspect every affected record count first.
 The Bank **Money** workspace displays **bank accounts** and **physical cash on
 hand** as separate kinds of holdings. Cash is not a bank account: creation,
 editing, balances and deletion are clearly distinguished in the UI. To preserve
-existing balances, transaction history and stable SQLite v5 migrations,
+existing balances, transaction history and safe, versioned SQLite migrations,
 both remain typed money locations within the **internal** existing ledger:
 `AccountKind.BANK` and `AccountKind.CASH`. Physical cash has no bank or
 account number, defaults to the label "На руках", and is not offered in
@@ -383,9 +383,10 @@ the task-first design (the latter URL remains a compatibility alias).
 - **Action dialogs:** create an investment, record a cash movement, edit a
   selected item, record a receipt, or preview deletion without leaving the
   object inspector. Feedback does not move the date toolbar.
-- **Opening setup:** when no opening snapshot exists, the UI leads through
-  setting up bank accounts/cash and opening balances. After opening, adding
-  an account is blocked by existing domain rules and the UI explains why.
+- **Opening setup:** first add banks and their monetary accounts (or physical
+  cash), then record the historical opening snapshot. New monetary accounts
+  may be added **after** opening, each with its own activation date and zero
+  starting cash; existing history is never altered.
 - **Securities PDF import:** explicit preview and confirmation; no raw PDF
   or personal data are stored in Git.
 
@@ -400,8 +401,45 @@ The current design is offline-first: `workspace.css`, `workspace.js` and
 the favicon are bundled, with no CDN, tracking, external fonts, or API calls.
 Without JavaScript the main workspace remains read-only; the internal
 forms endpoint provides a basic fallback for manual operations. No
-database migrations or automatic cash postings are introduced.
+automatic cash postings are introduced.
 
 When changing UX, update HTML, JS and synthetic browser-facing tests while
 preserving historical transaction and payout regression tests. Manual visual
 and keyboard review is still needed in the owner's browser.
+
+## Bank registry, multi-accounts and historical activation (SQLite v6)
+
+Use **Money → + Банк** to enter the institution name and optional official
+website and web cabinet HTTPS links. Open the bank in the list to inspect
+its separate **monetary** and **securities-custody** accounts. After
+registering a bank, add multiple UAH accounts, multiple USD accounts or
+other currency accounts; each has its own stable ID, title, native currency,
+and balance. Physical cash on hand remains its own, bank-independent
+object. A securities custody account stores **no money**, has no initial
+cash balance and is never added to cash or holdings totals merely because
+it was registered.
+
+At opening, enter an explicit closing amount (including zero) for each
+then-active monetary account. On a later day, add another account with an
+explicit **activation date strictly later than the opening snapshot**.
+Its balance starts at **zero**: fund it with a separate dated transfer or
+an explicit, reviewed correction. No value is silently added as income,
+and calculations dated before activation exclude this account. Multiple
+accounts in the same bank and currency do not merge or duplicate balances.
+A backdated cash event before activation is rejected. Monthly checks only
+request amounts for accounts already active on that date.
+
+A one-time, local **SQLite backup** under the user's Fin data directory
+(`$XDG_DATA_HOME/fin/backups`, default `~/.local/share/fin/backups`)
+is made **before migrating an existing v1–v5 database** to v6. The
+migration is atomic and preserves existing account IDs, balances,
+event histories and monthly snapshots; existing bank account names are
+grouped into a compatible bank registry. The app never uploads or commits
+backups or personal bank data. Bank deletion uses the same signed,
+two-step preview and backup as other entities and is rejected while
+any monetary or custody account is still associated with the bank.
+
+**Scope boundary:** manual bond/deposit lots and imported security rows
+remain separate from securities accounts; linking each holding to a
+specific custody or monetary account is a follow-up PR. Registering a
+securities account does not import securities or make a cash movement.

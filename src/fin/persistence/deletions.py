@@ -13,6 +13,8 @@ import sqlite3
 from dataclasses import dataclass
 
 _TYPES = {
+    "bank": "Банк",
+    "securities_account": "Счёт ценных бумаг",
     "account": "Банковский счёт",
     "cash": "Наличные",
     "opening": "Начальный снимок",
@@ -38,6 +40,8 @@ _LABELS = {
     "opening_snapshot": "Начальные снимки",
     "monthly_controls": "Месячные сверки",
     "cash_accounts": "Счета",
+    "securities_accounts": "Счета ценных бумаг",
+    "banks": "Банки",
     "securities_imports": "Записи из выписок",
 }
 # Children before parents: SQLite foreign keys are RESTRICT, not CASCADE.
@@ -101,7 +105,21 @@ def _select(db: sqlite3.Connection, kind: str, identifier: str):
             ).fetchone():
                 add("bond_instruments", "isin=?", (isin,))
 
-    if kind in ("account", "cash"):
+    if kind == "bank":
+        add("banks", "id=?", (identifier,))
+        if not selected["banks"]:
+            raise ValueError("Банк не найден")
+        if db.execute(
+            "SELECT 1 FROM cash_accounts WHERE bank_id=? LIMIT 1", (identifier,)
+        ).fetchone() or db.execute(
+            "SELECT 1 FROM securities_accounts WHERE bank_id=? LIMIT 1", (identifier,)
+        ).fetchone():
+            raise ValueError("Сначала удали или перенеси счета этого банка")
+
+    elif kind == "securities_account":
+        add("securities_accounts", "id=?", (identifier,))
+
+    elif kind in ("account", "cash"):
         expected_kind = "cash" if kind == "cash" else "bank"
         add("cash_accounts", "id=? AND kind=?", (identifier, expected_kind))
         if not selected["cash_accounts"]:
