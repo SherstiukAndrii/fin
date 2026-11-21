@@ -199,3 +199,16 @@ def test_empty_accounts_expose_a_clear_creation_action(tmp_path):
     assert 'id="form-account"' in html
     assert '<summary class="entrypoint">+ Добавить банковский счёт</summary>' in html
     assert "Несколько счетов одного банка" in html
+
+
+def test_compact_experiment_keeps_date_controls_and_local_styles(browser):
+    client, _ = browser
+    page = client.get("/bank")
+    css = client.get("/assets/bank.css")
+    assert page.status_code == 200
+    assert 'id="as-of-form"' in page.text
+    assert css.status_code == 200
+    assert "UX experiment B: compact data-first dashboard" in css.text
+    assert "min-height:48px" in css.text
+    assert "grid-template-columns:repeat(auto-fit,minmax(190px,1fr))" in css.text
+    assert "@media(max-width:600px)" in css.text
