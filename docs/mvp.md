@@ -192,7 +192,13 @@ dialogs fetch the original local `/bank` form for the chosen operation
 and submit it unchanged through existing audited routes. Deletion must still
 require CSRF, a signed read-only dependency preview, a typed confirmation,
 SQLite backup and atomic deletion. Import remains local and requires an
-explicit preview confirmation. The old Bank page is a visible fallback,
+explicit preview confirmation. Actions are gated by actual backend prerequisites: before the opening
+snapshot, show account/cash setup rather than a nonfunctional event button.
+After the snapshot, do not advertise unsupported account creation; explain
+that it needs a future migration and reliable history handling. This is
+a navigation constraint only, not a change to the database model.
+
+The old Bank page is a visible fallback,
 not removed or overwritten.
 
 No new financial calculations, schema migrations, generated personal

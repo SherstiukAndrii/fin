@@ -47,7 +47,11 @@
     <div class="rail-divider"></div>
     <div class="rail-heading">БЫСТРЫЕ ДЕЙСТВИЯ</div>
     <div class="rail-actions">
-      {{ action('+ Операция', 'form-event', 'events', 'quick-action') }}
+      {% if opening %}
+        {{ action('+ Операция', 'form-event', 'events', 'quick-action') }}
+      {% else %}
+        <a class="action quick-action" href="/workspace?area=money&as_of={{ as_of.isoformat() }}">Настроить деньги</a>
+      {% endif %}
       {{ action('+ Вложение', 'form-bond', 'holdings', 'quick-action') }}
       {{ action('Импортировать PDF', 'form-securities-import', 'imported-securities', 'quick-action') }}
     </div>
@@ -91,6 +95,15 @@
       {% else %}{{ empty_state('Остатков пока нет', 'Добавь банковский счёт или наличные и начальный снимок.') }}{% endif %}
     </section>
     <section class="start-tasks" aria-labelledby="task-heading">
+      {% if not opening %}
+      <h2 id="task-heading">Начни с начальных остатков</h2>
+      <div class="setup-hint">
+        <div><strong>Прежде чем записывать движение денег</strong>
+          <p>Добавь банковский счёт или наличные и зафиксируй сумму на дату начала учёта.
+            До этого реальные операции и месячная сверка недоступны.</p></div>
+        <a class="action primary" href="/workspace?area=money&as_of={{ as_of.isoformat() }}">Настроить деньги</a>
+      </div>
+      {% else %}
       <h2 id="task-heading">Что нужно сделать?</h2>
       <div class="task-grid">
         <div class="task-tile"><span>01 · ДЕНЬГИ</span><h3>Записать движение</h3><p>Расход, поступление или перевод между банком и наличными.</p>
@@ -101,6 +114,7 @@
         <div class="task-tile"><span>03 · ПРОВЕРКА</span><h3>Сверить реальность</h3><p>Сопоставь банковские и наличные суммы с журналом.</p>
           <a href="/workspace?area=review&as_of={{ as_of.isoformat() }}" class="action primary">Открыть сверку</a></div>
       </div>
+      {% endif %}
     </section>
     <section class="work-queue" aria-labelledby="queue-heading">
       <div class="section-top"><h2 id="queue-heading">Требует внимания</h2><a href="/workspace?area=due&as_of={{ as_of.isoformat() }}">Все выплаты</a></div>
@@ -128,9 +142,13 @@
       </div>
       <div class="page-heading-actions">
         {% if area == 'money' %}
-          {{ action('+ Банк', 'form-account', 'accounts', 'primary') }}
-          {{ action('+ Наличные', 'form-cash', 'accounts', 'subtle') }}
-          {% if not opening %}{{ action('Начальные остатки', 'form-opening', 'accounts', 'subtle') }}{% endif %}
+          {% if not opening %}
+            {{ action('+ Банк', 'form-account', 'accounts', 'primary') }}
+            {{ action('+ Наличные', 'form-cash', 'accounts', 'subtle') }}
+            {% if accounts %}{{ action('Начальные остатки', 'form-opening', 'accounts', 'subtle') }}{% endif %}
+          {% else %}
+            <span class="setup-limit">Новые счета после начального снимка пока не поддерживаются</span>
+          {% endif %}
         {% elif area == 'assets' %}
           {{ action('+ ОВГЗ', 'form-bond', 'holdings') }}
           {{ action('+ Депозит', 'form-deposit', 'holdings', 'subtle') }}
@@ -139,8 +157,12 @@
           {{ action('+ План', 'form-payment', 'payments') }}
           {{ action('Получено', 'form-receipt', 'payments', 'subtle') }}
         {% elif area == 'activity' %}
-          {{ action('+ Операция', 'form-event', 'events') }}
-        {% else %}{{ action('+ Сверка', 'form-control', 'monthly-controls') }}{% endif %}
+          {% if opening %}{{ action('+ Операция', 'form-event', 'events') }}
+          {% else %}<a class="action subtle" href="/workspace?area=money&as_of={{ as_of.isoformat() }}">Начать учёт</a>{% endif %}
+        {% else %}
+          {% if opening %}{{ action('+ Сверка', 'form-control', 'monthly-controls') }}
+          {% else %}<a class="action subtle" href="/workspace?area=money&as_of={{ as_of.isoformat() }}">Начать учёт</a>{% endif %}
+        {% endif %}
       </div></div>
 
       <div class="master-detail">
@@ -210,7 +232,7 @@
             <div class="detail-value">{% if selected_account.id in balances %}{{ balances[selected_account.id].amount|amount }}{% else %}—{% endif %}<small>{{ selected_account.currency }}</small></div>
             <p class="detail-footnote">Фактический остаток на выбранную дату, без будущих выплат.</p>
             <div class="inspector-actions">
-              {{ action('Движение денег', 'form-event', 'events') }}
+              {% if opening %}{{ action('Движение денег', 'form-event', 'events') }}{% endif %}
               {{ edit('Изменить', '/bank/edit_account', selected_account.id, 'accounts') }}
               {{ remove('cash' if selected_account.kind.value == 'cash' else 'account', selected_account.id, 'accounts') }}
             </div>

@@ -219,3 +219,12 @@ dd { margin:0;font-weight:650;overflow-wrap:anywhere; }
   #workspace-dialog-body .grid { grid-template-columns:minmax(0,1fr); }
 }
 @media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important;animation:none !important;transition:none !important; } }
+
+/* Explain setup prerequisites instead of showing actions the server cannot accept. */
+.setup-hint { display:flex;align-items:center;justify-content:space-between;gap:20px;
+  background:#fff;border:1px solid #d9e5eb;border-radius:10px;padding:18px 20px; }
+.setup-hint strong { font-size:14px;color:#284259; }
+.setup-hint p { color:#667b8d;font-size:12px;margin:5px 0 0;max-width:600px; }
+.setup-limit { color:#7c6b4e;background:#fff8ed;border:1px solid #e9d7b8;
+  padding:7px 11px;border-radius:7px;font-size:12px; }
+@media(max-width:760px) { .setup-hint { flex-direction:column;align-items:flex-start; } }

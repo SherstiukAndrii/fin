@@ -216,3 +216,39 @@ def test_old_bank_still_available_and_links_to_prototype(browser):
     assert 'href="/workspace"' in bank.text
     assert 'id="bank-main"' in bank.text
     assert "Imaginary Bank" in bank.text
+
+
+def test_setup_uses_real_prerequisites_instead_of_broken_action_buttons(tmp_path):
+    path = tmp_path / "fictional-setup.sqlite3"
+    with SQLiteCashRepository(path):
+        pass
+    with TestClient(create_app(path), base_url="http://localhost") as client:
+        home = client.get("/workspace?as_of=2028-02-15")
+        assert home.status_code == 200
+        assert "Начни с начальных остатков" in home.text
+        assert 'data-form-id="form-event"' not in home.text
+        assert "Настроить деньги" in home.text
+
+        before = client.get("/workspace?area=money&as_of=2028-02-15")
+        assert 'data-form-id="form-account"' in before.text
+        assert 'data-form-id="form-cash"' in before.text
+        assert 'data-form-id="form-opening"' not in before.text
+
+        with SQLiteCashRepository(path) as repo:
+            repo.add_account(CashAccount("bank", "Imaginary Bank", "UAH", AccountKind.BANK))
+        with_account = client.get("/workspace?area=money&as_of=2028-02-15")
+        assert 'data-form-id="form-opening"' in with_account.text
+
+        with SQLiteCashRepository(path) as repo:
+            repo.save_opening_snapshot(
+                OpeningSnapshot(
+                    date(2028, 1, 1),
+                    (OpeningBalance("bank", amount("100")),),
+                )
+            )
+        after = client.get("/workspace?area=money&as_of=2028-02-15")
+        assert "Новые счета после начального снимка пока не поддерживаются" in after.text
+        assert 'data-form-id="form-account"' not in after.text
+        assert 'data-form-id="form-cash"' not in after.text
+        activity = client.get("/workspace?area=activity&as_of=2028-02-15")
+        assert 'data-form-id="form-event"' in activity.text

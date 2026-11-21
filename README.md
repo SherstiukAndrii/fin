@@ -407,6 +407,13 @@ open purpose-specific modal forms pulled **locally** from the existing
 `/bank` server forms. Actions continue to use the existing CSRF-protected
 `/bank` endpoints, signed deletion previews and backups; this prototype
 does not introduce alternate financial calculations or database writes.
+When the opening snapshot has not been recorded, the home page guides the
+user to register a bank account or physical cash, then save the opening
+balance; it does not offer ledger actions the backend would reject. Once
+an opening snapshot exists, the prototype explains that additional accounts
+are not supported by the current SQLite history model, instead of opening
+an unavailable creation form.
+
 The old `/bank` remains available via a link, including as a progressive
 enhancement fallback. Both interfaces access the same private SQLite;
 do not run them with separate or copied live data while comparing.
