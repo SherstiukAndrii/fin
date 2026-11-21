@@ -354,9 +354,11 @@ both remain typed money locations within the **internal** existing ledger:
 account number, defaults to the label "На руках", and is not offered in
 bank-account creation. You can create physical cash directly with **+ Наличные**
 even when no banks exist; its optional label is a storage place, not a bank name.
-The cash form never requests a bank ID. The server also rejects attempts to link
-cash to a bank or to create cash through the bank-account route. Existing cash
-records stay under the cash section without changing identifiers or amounts.
+The cash form never requests a bank ID. The server rejects attempts to link
+cash to a bank, including through the legacy bank-account route (which remains
+backwards compatible for existing clients that explicitly submit kind=cash).
+Existing cash records stay under the cash section without changing identifiers
+or amounts.
 
 The opening snapshot and monthly reconciliations cover **both** banks and
 cash. Transfers between cash and bank locations change each balance once,

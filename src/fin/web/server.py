@@ -192,8 +192,6 @@ def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
         account_kind = AccountKind.CASH if kind == "cash" else AccountKind(_field(form, "kind"))
         if kind == "cash" and _field(form, "kind", optional=True) not in {"", "cash"}:
             raise ValueError("Наличные добавляются отдельно от банковских счетов")
-        if kind == "account" and not editing and account_kind != AccountKind.BANK:
-            raise ValueError("Для наличных используй отдельную форму")
         if account_kind == AccountKind.CASH and _field(form, "bank_id", optional=True):
             raise ValueError("Наличные не принадлежат банку")
         account = CashAccount(

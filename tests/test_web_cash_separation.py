@@ -62,9 +62,16 @@ def test_cash_without_any_bank_uses_its_own_form_and_stays_unlinked(browser):
     assert "НАЛИЧНЫЕ НА РУКАХ" in client.get("/bank?area=money").text
 
 
-def test_cash_cannot_be_submitted_as_bank_account_or_linked_to_a_bank(browser):
+def test_cash_rejects_bank_association_from_any_submission_route(browser):
     client, path = browser
-    bad_account = post(client, "account", name="Wrong kind", currency="UAH", kind="cash")
+    bad_account = post(
+        client,
+        "account",
+        name="Fictional wallet",
+        currency="UAH",
+        kind="cash",
+        bank_id="fictional-bank",
+    )
     assert bad_account.status_code == 422
     assert post(client, "cash", currency="UAH", bank_id="fictional-bank").status_code == 422
     assert post(client, "cash", currency="UAH", kind="bank").status_code == 422
