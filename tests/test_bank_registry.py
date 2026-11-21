@@ -163,8 +163,7 @@ def test_new_accounts_after_opening_are_zero_and_history_is_not_rewritten(tmp_pa
         assert amounts["second"] == money("70")
         assert amounts["cash"] == money("0")
         assert sum(v.amount for v in amounts.values()) == Decimal("1000")
-        assert repo.get_opening_snapshot().balances == (OpeningBalance("main", money("1000")),
-        )
+        assert repo.get_opening_snapshot().balances == (OpeningBalance("main", money("1000")),)
         with pytest.raises(CurrencyMismatchError):
             repo.add_cash_event(
                 CashEvent(
@@ -319,9 +318,7 @@ def test_task_first_web_supports_bank_many_accounts_and_external_links(tmp_path,
             name="Savings UAH",
             currency="UAH",
         )
-        created(
-            "securities_account", id="custody", bank_id="demo", name="OVGZ custody"
-        )
+        created("securities_account", id="custody", bank_id="demo", name="OVGZ custody")
 
         bank_page = client.get("/bank?area=money&target=bank:demo")
         assert bank_page.status_code == 200
