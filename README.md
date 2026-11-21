@@ -343,3 +343,47 @@ bond contracts or create financial transactions. The procedure does not
 implement an undo button: restore a private backup if the deletion was a
 mistake. Use the delete preview to inspect every affected record count first.
 
+## Bank balances: accounts vs physical cash
+
+The Bank **Money** workspace displays **bank accounts** and **physical cash on
+hand** as separate kinds of holdings. Cash is not a bank account: creation,
+editing, balances and deletion are clearly distinguished in the UI. To preserve
+existing balances, transaction history and stable SQLite v5 migrations,
+both remain typed money locations within the **internal** existing ledger:
+`AccountKind.BANK` and `AccountKind.CASH`. Physical cash has no bank or
+account number, defaults to the label "На руках", and is not offered in
+bank-account creation. Existing cash records are shown under the cash section
+without changing their identifiers or recorded amounts.
+
+The opening snapshot and monthly reconciliations cover **both** banks and
+cash. Transfers between cash and bank locations change each balance once,
+with no net creation of money. Real cash includes both kinds, while planned
+payouts and imported securities do not book cash. To avoid accidental removal
+of cash under the bank-account deletion label, cash deletion has its own
+signed preview type and uses the same backup and dependency checks.
+No migration or data rewrite is performed.
+
+## Bank workspace and date navigation
+
+The Bank interface uses six focused workspaces: **Overview**, **Accounts**,
+**Investments**, **Payments**, **Reconciliation** and **Transactions**. The
+top-of-page date control is an **as-of viewing date**, not a posting date.
+Choose an exact day, move one calendar month backward/forward, jump to today,
+or show the end of the previous month. Financial figures are always calculated
+for that selected date, per currency. Changing the date does not write data.
+
+With JavaScript enabled, the browser keeps the date toolbar and navigation in
+place while updating only the relevant data cards. Expanded top-level forms and
+the selected workspace are preserved across successful requests; feedback
+appears as a fixed toast instead of inserting new content into the page.
+Deleting an entity opens a native modal with dependent-record counts, warnings
+and the required typed confirmation. Escape or Cancel closes it without
+posting anything. A no-JavaScript fallback retains ordinary forms and an
+inline deletion preview. Deletion still uses the same signed preview, CSRF,
+private backup, transactional database logic and financial invariants.
+
+Both the stylesheet and JavaScript ship **locally** in the Python package.
+No CDN, telemetry, cookies or external data source are required. The
+JavaScript source is syntax-checked in CI; backend behavior and currency
+calculations remain unchanged.
+

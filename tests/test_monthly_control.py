@@ -281,5 +281,5 @@ def test_web_control_snapshot_and_separate_confirmation(browser):
 def test_no_opening_does_not_offer_monthly_capture(browser):
     page = browser[0].get("/bank")
     assert page.status_code == 200
-    assert "Сначала укажи счета и начальные остатки" in page.text
+    assert "Сначала укажи банки и/или наличные, затем начальные остатки" in page.text
     assert 'action="/bank/control?' not in page.text

@@ -31,6 +31,7 @@
     .danger{background:#b73535}.remove-form{display:inline-block;margin:3px 0}
     @media(max-width:680px){main{padding:8px}.card{padding:11px}th,td{padding:7px}}
   </style>
+  <link rel="stylesheet" href="/assets/bank.css">
   <script src="/assets/bank.js" defer></script>
 </head>
 <body>
@@ -111,18 +112,56 @@
         </details>
         {{ delete_action('holding', h.id, 'Удалить вложение') }}
   {%- endmacro %}
-  <header><strong>fin.</strong><span>Bank</span><span>Overview — позже</span></header>
-  <main>
-    <div class="bar"><div><h1>Bank</h1><p class="small">Деньги и вложения. Плановые выплаты не прибавляются к счёту.</p></div>
-      <form method="get" action="/bank" class="bar"><label>Остатки на дату<input type="date" name="as_of" value="{{ as_of.isoformat() }}" required></label><button>Показать</button></form>
+  <header class="app-header">
+    <div class="brand"><strong>fin<span>.</span></strong><span>Личные финансы</span></div>
+    <div class="local-state"><span class="status-dot" aria-hidden="true"></span> Локальный учёт · данные только в Fin</div>
+  </header>
+  <main id="bank-main">
+    <div class="context-bar">
+      <div class="context-title">
+        <span class="eyebrow">Рабочее пространство / Bank</span>
+        <h1>Мои финансы</h1>
+        <p class="small">Реальные остатки, инвестиции и выплаты — без смешения плановых и фактических денег.</p>
+      </div>
+      <form method="get" action="/bank" id="as-of-form" class="period-filter" aria-label="Дата расчёта финансов">
+        <div class="period-heading">
+          <div><span class="eyebrow">Срез на дату</span><strong id="selected-date-label">{{ as_of.strftime('%d.%m.%Y') }}</strong></div>
+          <span class="period-hint">Изменяет только просмотр, не записи</span>
+        </div>
+        <div class="period-controls">
+          <button type="button" class="period-step" data-month-step="-1" aria-label="Предыдущий месяц" title="Предыдущий месяц">‹</button>
+          <label class="period-date-label"><span class="sr-only">Дата расчёта</span>
+            <input id="as-of-field" type="date" name="as_of" value="{{ as_of.isoformat() }}"
+                   data-today="{{ today.isoformat() }}" required aria-describedby="date-help">
+          </label>
+          <button type="button" class="period-step" data-month-step="1" aria-label="Следующий месяц" title="Следующий месяц">›</button>
+          <button type="submit" class="period-apply">Показать</button>
+        </div>
+        <div class="period-presets">
+          <button type="button" data-date-preset="today">Сегодня</button>
+          <button type="button" data-date-preset="previous-month-end">Конец прошлого месяца</button>
+        </div>
+        <p class="sr-only" id="date-help">Выбери дату или используй быстрые переключатели месяцев. Отчёт пересчитывается без сохранения операций.</p>
+      </form>
     </div>
-    {% if form_error %}<div class="banner" role="alert">Запись не сохранена: {{ form_error }}</div>{% endif %}
+    <nav class="workspace-nav" aria-label="Разделы Fin" id="workspace-nav">
+      <a href="#overview" data-view="overview" aria-current="page">Обзор</a>
+      <a href="#accounts" data-view="accounts">Деньги</a>
+      <a href="#holdings" data-view="investments">Вложения</a>
+      <a href="#payments" data-view="payments">Выплаты</a>
+      <a href="#monthly-controls" data-view="reconciliation">Сверка</a>
+      <a href="#events" data-view="transactions">Операции</a>
+    </nav>
+    <p class="workspace-note" id="workspace-note" aria-live="polite">Все значения приведены на выбранную дату. Смена даты не меняет реальные счета.</p>
+    <div id="page-messages" aria-live="polite">
+      {% if form_error %}<div class="banner" role="alert">Запись не сохранена: {{ form_error }}</div>{% endif %}
+      {% if warning %}<div class="banner">{{ warning }}</div>{% endif %}
+    </div>
     {% if missing_db %}
     <section class="banner">База не создана. В VS Code запусти <code>Fin: DB Init</code> или <code>python -m fin db init</code>.</section>
     {% else %}
-    {% if warning %}<div class="banner">{{ warning }}</div>{% endif %}
     {% if delete_plan %}
-    <section class="card" id="confirm-deletion">
+    <section class="card" id="confirm-deletion" role="group" aria-label="Предпросмотр удаления">
       <h2>Подтверждение удаления: {{ delete_plan.title }}</h2>
       <p>Будут удалены следующие связанные записи:</p>
       <ul>{% for label, count in delete_plan.counts %}
@@ -145,39 +184,91 @@
     </section>
     {% endif %}
 
-    <section class="card" id="accounts"><h2>Счета и остатки</h2>
-      {% if accounts %}
-      <div class="scroll"><table><thead><tr><th>Счёт</th><th>Тип</th><th>Валюта</th><th>На {{ as_of }}</th><th></th></tr></thead>
-      <tbody>{% for a in accounts %}<tr><td><strong>{{ a.name }}</strong></td><td>{{ a.kind.value }}</td>
-        <td>{{ a.currency }}</td><td class="num">{% if a.id in balances %}{{ balances[a.id].amount|amount }} {{ a.currency }}{% else %}—{% endif %}</td>
-        <td><details><summary>Изменить</summary>
-          <form action="/bank/edit_account" method="post">{{ token() }}
-            <input type="hidden" name="id" value="{{ a.id }}"><input type="hidden" name="currency" value="{{ a.currency }}">
-            <label>Название<input name="name" required value="{{ a.name }}"></label>
-            <label>Тип<select name="kind"><option value="bank" {% if a.kind.value == 'bank' %}selected{% endif %}>Банковский</option><option value="cash" {% if a.kind.value == 'cash' %}selected{% endif %}>Наличные</option></select></label>
-            <button class="mini">Сохранить</button>
-          </form></details>
-          {{ delete_action('account', a.id, 'Удалить счёт') }}
-        </td>
-      </tr>{% endfor %}</tbody></table></div>
-      <p class="small">Суммы в разных валютах не складываются без датированного курса.</p>
-      {% else %}<p class="small">Счета пока не созданы.</p>{% endif %}
-
+    <section class="card" id="accounts"><div class="section-heading">
+      <div><span class="eyebrow">Реальные средства</span><h2>Деньги</h2></div>
+      <span class="summary-period">На {{ as_of.strftime('%d.%m.%Y') }}</span></div>
+      <p class="small">Банковские счета и наличные на руках учитываются отдельно.
+        Плановые выплаты не изменяют реальные остатки.</p>
+      <div class="money-groups">
+        <div class="money-group" id="bank-accounts">
+          <h3>Банковские счета <span class="pill">{{ bank_accounts|length }}</span></h3>
+          {% if bank_accounts %}
+          <div class="scroll"><table><thead><tr><th>Банк / счёт</th><th>Валюта</th><th>Остаток на дату</th><th>Действия</th></tr></thead>
+          <tbody>{% for a in bank_accounts %}<tr>
+            <td><strong>{{ a.name }}</strong></td><td>{{ a.currency }}</td>
+            <td class="num">{% if a.id in balances %}{{ balances[a.id].amount|amount }} {{ a.currency }}{% else %}—{% endif %}</td>
+            <td><details><summary>Изменить</summary>
+              <form action="/bank/edit_account" method="post">{{ token() }}
+                <input type="hidden" name="id" value="{{ a.id }}">
+                <input type="hidden" name="currency" value="{{ a.currency }}">
+                <input type="hidden" name="kind" value="bank">
+                <label>Название банка / счёта<input name="name" value="{{ a.name }}" required></label>
+                <button class="mini">Сохранить</button>
+              </form></details>
+              {{ delete_action('account', a.id, 'Удалить счёт') }}
+            </td>
+          </tr>{% endfor %}</tbody></table></div>
+          {% else %}<p class="small">Банковских счетов пока нет.</p>{% endif %}
+          {% if not opening %}
+          <details id="form-account" {% if not bank_accounts or failed_form == 'account' %}open{% endif %}>
+            <summary>+ Добавить банковский счёт</summary>
+            <form method="post" action="/bank/account">{{ token() }}
+              <input type="hidden" name="kind" value="bank">
+              <div class="grid">
+                <label>Название банка / счёта
+                  <input name="name" placeholder="Моно UAH" value="{{ prior('account','name') }}" required>
+                </label>
+                <label>Валюта<input name="currency" value="{{ prior('account','currency','UAH') }}" required></label>
+              </div>
+              <button>Добавить банковский счёт</button>
+            </form>
+          </details>
+          {% endif %}
+        </div>
+        <div class="money-group" id="cash-on-hand">
+          <h3>Наличные на руках <span class="pill">{{ cash_locations|length }}</span></h3>
+          {% if cash_locations %}
+          <div class="scroll"><table><thead><tr><th>Где хранятся</th><th>Валюта</th><th>На руках на дату</th><th>Действия</th></tr></thead>
+          <tbody>{% for a in cash_locations %}<tr>
+            <td><strong>{{ a.name }}</strong></td><td>{{ a.currency }}</td>
+            <td class="num">{% if a.id in balances %}{{ balances[a.id].amount|amount }} {{ a.currency }}{% else %}—{% endif %}</td>
+            <td><details><summary>Изменить</summary>
+              <form action="/bank/edit_account" method="post">{{ token() }}
+                <input type="hidden" name="id" value="{{ a.id }}">
+                <input type="hidden" name="currency" value="{{ a.currency }}">
+                <input type="hidden" name="kind" value="cash">
+                <label>Где хранятся наличные<input name="name" value="{{ a.name }}" required></label>
+                <button class="mini">Сохранить</button>
+              </form></details>
+              {{ delete_action('cash', a.id, 'Удалить наличные') }}
+            </td>
+          </tr>{% endfor %}</tbody></table></div>
+          {% else %}<p class="small">Наличные пока не внесены.</p>{% endif %}
+          {% if not opening %}
+          <details id="form-cash" {% if failed_form == 'cash' %}open{% endif %}>
+            <summary>+ Добавить наличные</summary>
+            <form method="post" action="/bank/cash">{{ token() }}
+              <div class="grid">
+                <label>Валюта<input name="currency" value="{{ prior('cash','currency','UAH') }}" required></label>
+                <label>Где хранятся (необязательно)
+                  <input name="name" placeholder="На руках" value="{{ prior('cash','name') }}">
+                </label>
+              </div>
+              <button>Добавить наличные</button>
+              <p class="small">Сумму введи в начальном снимке ниже. Это не банковский счёт.</p>
+            </form>
+          </details>
+          {% endif %}
+        </div>
+      </div>
+      <p class="small">Валюты не суммируются без курса обмена.</p>
       {% if not opening %}
-      <div class="banner">Сначала создай все счета, затем зафиксируй начальный снимок с остатками на выбранную дату.</div>
-      <details id="form-account" open><summary>1. Добавить счёт</summary>
-        <form method="post" action="/bank/account">{{ token() }}
-          <div class="grid">
-          <label>Название<input name="name" placeholder="Моно UAH" value="{{ prior('account','name') }}" required></label>
-          <label>Валюта<input name="currency" value="{{ prior('account','currency','UAH') }}" required></label>
-          <label>Тип<select name="kind"><option value="bank" {{ chosen('account','kind','bank','bank') }}>Банковский</option><option value="cash" {{ chosen('account','kind','cash','bank') }}>Наличные</option></select></label></div>
-          <button>Добавить счёт</button><p class="small">ID создаётся автоматически.</p>
-        </form></details>
+      <div class="banner">Сначала добавь банки и/или наличные, затем зафиксируй начальные суммы на выбранную дату.</div>
       {% if accounts %}
-      <details id="form-opening" open><summary>2. Начальные остатки (однократно)</summary>
+      <details id="form-opening" open><summary>Начальные остатки банков и наличных (однократно)</summary>
         <form method="post" action="/bank/opening">{{ token() }}
           <div class="grid"><label>Дата на конец дня<input name="as_of" type="date" value="{{ prior('opening','as_of',today.isoformat()) }}" required></label>
-          {% for a in accounts %}<label>{{ a.name }} ({{ a.currency }})<input name="balance_{{ a.id }}" value="{{ prior('opening','balance_' ~ a.id) }}" required placeholder="0" data-grouped inputmode="decimal"></label>{% endfor %}</div>
+          {% for a in accounts %}<label>{{ "Наличные · " if a.kind.value == "cash" else "Банк · " }}{{ a.name }} ({{ a.currency }})<input name="balance_{{ a.id }}" value="{{ prior('opening','balance_' ~ a.id) }}" required placeholder="0" data-grouped inputmode="decimal"></label>{% endfor %}</div>
           <button>Зафиксировать</button><p class="small">Укажи все остатки, включая известные нули. Учтённые до этой даты покупки повторно не списываются.</p>
         </form></details>
       {% endif %}
@@ -186,7 +277,7 @@
       <details><summary>Исправить начальный снимок</summary>
         <form method="post" action="/bank/edit_opening">{{ token() }}
           <div class="grid"><label>Дата<input type="date" name="as_of" value="{{ opening.as_of.isoformat() }}" required></label>
-          {% for b in opening.balances %}<label>{{ b.account_id }} · {{ b.amount.currency }}
+          {% for b in opening.balances %}<label>{{ account_labels.get(b.account_id, b.account_id) }}
           <input name="balance_{{ b.account_id }}" value="{{ b.amount.amount }}" required data-grouped inputmode="decimal"></label>{% endfor %}</div>
           <button class="mini">Сохранить</button>
         </form></details>
@@ -196,11 +287,11 @@
           <div class="grid">
             <label>Дата<input type="date" name="effective_on" value="{{ prior('event','effective_on',today.isoformat()) }}" required></label>
             <label>Тип<select name="kind">
-              {% for val,title in [('inflow','Поступление'),('outflow','Расход'),('transfer','Между своими счетами'),('correction','Корректировка')] %}
+              {% for val,title in [('inflow','Поступление'),('outflow','Расход'),('transfer','Перемещение между банком и наличными'),('correction','Корректировка')] %}
               <option value="{{ val }}" {{ chosen('event','kind',val,'inflow') }}>{{ title }}</option>{% endfor %}
             </select></label>
-            <label>Откуда / счёт<select name="account_id">{% for a in accounts %}<option value="{{ a.id }}" {{ chosen('event','account_id',a.id) }}>{{ a.name }} ({{ a.currency }})</option>{% endfor %}</select></label>
-            <label>Куда (для перевода)<select name="to_account_id"><option value="">—</option>{% for a in accounts %}<option value="{{ a.id }}" {{ chosen('event','to_account_id',a.id) }}>{{ a.name }}</option>{% endfor %}</select></label>
+            <label>Откуда (банк или наличные)<select name="account_id">{% for a in accounts %}<option value="{{ a.id }}" {{ chosen('event','account_id',a.id) }}>{{ account_labels[a.id] }}</option>{% endfor %}</select></label>
+            <label>Куда (для перевода)<select name="to_account_id"><option value="">—</option>{% for a in accounts %}<option value="{{ a.id }}" {{ chosen('event','to_account_id',a.id) }}>{{ account_labels[a.id] }}</option>{% endfor %}</select></label>
             <label>Сумма<input name="amount" value="{{ prior('event','amount') }}" required placeholder="100.00" data-grouped inputmode="decimal"></label>
             <label>Причина корректировки<input name="note" value="{{ prior('event','note') }}"></label>
           </div><button>Записать операцию</button>
@@ -210,11 +301,29 @@
     </section>
 
     <section class="card" id="cash-outlook">
-      <h2>Деньги и ожидаемые выплаты к {{ as_of }}</h2>
+      <div class="section-heading"><div><span class="eyebrow">Обзор средств</span>
+        <h2>Деньги и ожидаемые выплаты к {{ as_of }}</h2></div>
+        <span class="summary-period">На {{ as_of.strftime('%d.%m.%Y') }}</span></div>
+      {% if outlook %}
+      <div class="metric-grid">
+      {% for row in outlook %}
+        <article class="metric-card">
+          <div class="metric-currency">{{ row.currency }}</div>
+          <span class="metric-label">Реально доступно</span>
+          <strong class="metric-value">{{ row.actual_cash.amount|amount }}</strong>
+          <div class="metric-divider"></div>
+          <span class="metric-label">Потенциально к дате</span>
+          <strong class="metric-secondary">{{ row.potential_cash.amount|amount }}</strong>
+          <p class="small">В том числе не зачислено: {{ row.uncredited.amount|amount }}</p>
+        </article>
+      {% endfor %}
+      </div>
+      {% endif %}
       {% if outlook is not none %}
       {% if outlook %}
+      <details class="explanation" id="outlook-details"><summary>Подробная структура прогнозируемых сумм</summary>
       <div class="scroll"><table><thead><tr>
-        <th>Валюта</th><th>Реально на счетах</th><th>Получено, не зачислено</th>
+        <th>Валюта</th><th>Реально доступно</th><th>Получено, не зачислено</th>
         <th>Ожидаемый доход к дате</th><th>Возврат тела к дате</th><th>Потенциально</th>
       </tr></thead><tbody>
         {% for row in outlook %}<tr>
@@ -227,7 +336,7 @@
         </tr>{% endfor %}
       </tbody></table></div>
       {% else %}<p class="small">Нет счетов или выплат для расчёта.</p>{% endif %}
-      <p class="small"><strong>Реально на счетах</strong> — только начальные остатки и отдельно подтверждённые денежные операции.
+      <p class="small"><strong>Реально доступно</strong> — только банковские и наличные остатки вместе с подтверждёнными денежными операциями.
       <strong>Не зачислено</strong> — записанный факт без операции зачисления.
       <strong>Ожидаемый доход</strong> — неполученные купоны и проценты, срок которых наступил к выбранной дате.
       <strong>Возврат тела</strong> — неполученный номинал ОВГЗ/депозита с датой погашения до выбранного дня; это не прибыль.</p>
@@ -235,6 +344,7 @@
       Это сценарий при поступлении всех причитающихся выплат (включая просроченные), а не гарантированно доступные деньги.
       Выплаты до даты начального снимка не прибавляются повторно; покупки, будущие расходы и валютная конвертация здесь не прогнозируются.
       Разные валюты не складываются.</p>
+      </details>
       {% elif not opening %}
       <p class="small">Зафиксируй начальный снимок, чтобы рассчитать реальные и ожидаемые остатки.</p>
       {% else %}
@@ -243,7 +353,8 @@
     </section>
 
     <section class="card" id="monthly-controls">
-      <h2>Ежемесячная сверка остатков</h2>
+      <div class="section-heading"><div><span class="eyebrow">Контроль качества учёта</span>
+      <h2>Ежемесячная сверка остатков</h2></div></div>
       <p class="small">Контрольный снимок хранит увиденные на конец месяца остатки всех счетов.
         Снимок <strong>не изменяет</strong> деньги автоматически. Корректировка проводится отдельно
         и требует причины. Сравнение выполняется по каждому счёту в его валюте.</p>
@@ -254,7 +365,7 @@
           <div class="grid">
             <label>Конец месяца<input type="date" name="as_of" value="{{ prior('control','as_of',control_default) }}" required></label>
             {% for a in accounts %}
-            <label>Фактически на {{ a.name }} ({{ a.currency }})
+            <label>Фактически {{ "наличными" if a.kind.value == "cash" else "в банке" }}: {{ a.name }} ({{ a.currency }})
               <input name="balance_{{ a.id }}" value="{{ prior('control','balance_' ~ a.id) }}"
                      required data-grouped inputmode="decimal" placeholder="0"></label>
             {% endfor %}
@@ -273,7 +384,7 @@
         <th>Расчёт сейчас</th><th>Разница сейчас</th><th>Сверка</th></tr></thead><tbody>
         {% for row in control.rows %}
         <tr>
-          <td>{{ row.account.name }} ({{ row.account.currency }})</td>
+          <td>{{ "Наличные · " if row.account.kind.value == "cash" else "Банк · " }}{{ row.account.name }} ({{ row.account.currency }})</td>
           <td class="num">{{ row.observed.amount|amount }}</td>
           <td class="num">{{ row.calculated_at_capture.amount|amount }}</td>
           <td class="num">{{ row.current_calculated.amount|amount }}</td>
@@ -306,12 +417,13 @@
       <p class="small">Контрольных месячных снимков пока нет.</p>
       {% endif %}
       {% else %}
-      <p class="small">Сначала укажи счета и начальные остатки.</p>
+      <p class="small">Сначала укажи банки и/или наличные, затем начальные остатки.</p>
       {% endif %}
     </section>
 
     <section class="card" id="imported-securities">
-      <h2>Мои ОВГЗ — импорт выписок</h2>
+      <div class="section-heading"><div><span class="eyebrow">Загрузка портфеля</span>
+      <h2>Импорт выписок ОВГЗ</h2></div></div>
       <p class="small">Загружай PDF-выписки через локальный Fin. До подтверждения данные не записываются.
         ФИО, номера счетов и сами документы не сохраняются в Fin; в SQLite попадают только
         сведения о бумаге, количестве и депозитарии. При подтверждении создаётся резервная копия.</p>
@@ -371,7 +483,9 @@
     </section>
 
     <section class="card" id="holdings">
-      <h2>Вложения <span class="pill">{{ investment_rows|length }}</span></h2>
+      <div class="section-heading"><div><span class="eyebrow">Активы</span>
+      <h2>Вложения <span class="pill">{{ investment_rows|length }}</span></h2></div>
+      <a class="text-action" href="#imported-securities" data-switch-view="investments" data-focus-id="form-securities-import">Импортировать PDF</a></div>
       {% if investment_rows %}
       <div class="scroll"><table><thead><tr>
         <th>Тип</th><th>Инструмент / учреждение</th><th>Количество / тело</th>
@@ -533,9 +647,12 @@
     </section>
 
     <section class="card" id="payments">
-      <h2>Календарь плановых и фактических выплат</h2>
-      <p class="small"><strong>План:</strong> ожидаемый купон (проценты по ОВГЗ), проценты депозита или возврат тела в конкретную дату.
-      <strong>Факт:</strong> сумма, действительно поступившая из банка. Для одного выпуска ОВГЗ несколько купонов = несколько отдельных строк. Название coupon_march придумывать не нужно — внутренние ID генерируются автоматически.</p>
+      <div class="section-heading"><div><span class="eyebrow">План / факт</span>
+      <h2>Календарь плановых и фактических выплат</h2></div></div>
+      <details class="explanation"><summary>Как устроен календарь выплат</summary>
+      <p class="small"><strong>План:</strong> ожидаемый купон, проценты депозита или возврат тела в конкретную дату.
+      <strong>Факт:</strong> фактически поступившие деньги. Несколько купонов одного выпуска — отдельные строки. Внутренние ID создаются автоматически.</p>
+      </details>
       {% if payments %}
       <div class="scroll"><table><thead><tr><th>Конкретная инвестиция</th><th>Дата</th><th>Тип</th><th>План</th><th>Факт</th><th>Отклонение</th><th>Остаток</th><th>Состояние</th></tr></thead>
       <tbody>{% for p in payments %}<tr>
@@ -577,7 +694,7 @@
             {% elif opening %}
             <form method="post" action="/bank/credit">{{ token() }}
               <input type="hidden" name="receipt_id" value="{{ item.item.id }}"><input type="hidden" name="payment_id" value="{{ p.id }}">
-              <label>Зачислить на<select name="account_id" required>{% for a in accounts if a.currency == item.item.amount.currency %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></label>
+              <label>Куда поступили деньги<select name="account_id" required>{% for a in accounts if a.currency == item.item.amount.currency %}<option value="{{ a.id }}">{{ account_labels[a.id] }}</option>{% endfor %}</select></label>
               <button class="mini">Зачислить</button>
             </form>
             {% else %}Ожидает начального снимка{% endif %}
@@ -620,12 +737,13 @@
       </details>{% endif %}
     </section>
 
-    <section class="card" id="events"><h2>Последние денежные операции</h2>
+    <section class="card" id="events"><div class="section-heading">
+      <div><span class="eyebrow">История движения денег</span><h2>Денежные операции</h2></div></div>
       {% if events %}
-      <div class="scroll"><table><thead><tr><th>Дата</th><th>Тип</th><th>Счета</th><th>Изменения</th><th>Примечание / изменение</th></tr></thead>
+      <div class="scroll"><table><thead><tr><th>Дата</th><th>Тип</th><th>Источник / назначение</th><th>Изменения</th><th>Примечание / изменение</th></tr></thead>
       <tbody>{% for e in events %}<tr>
         <td>{{ e.effective_on }}</td><td>{{ e.kind.value }}</td>
-        <td>{% for leg in e.legs %}{{ leg.account_id }}{% if not loop.last %} / {% endif %}{% endfor %}</td>
+        <td>{% for leg in e.legs %}{{ account_labels.get(leg.account_id, leg.account_id) }}{% if not loop.last %} / {% endif %}{% endfor %}</td>
         <td class="num">{% for leg in e.legs %}{{ leg.change.amount|amount }} {{ leg.change.currency }}{% if not loop.last %} / {% endif %}{% endfor %}</td>
         <td>{{ e.note or '—' }}
           {% if e.receipt_id is none %}
@@ -634,8 +752,8 @@
               <input type="hidden" name="id" value="{{ e.id }}">
               <label>Дата<input name="effective_on" type="date" value="{{ e.effective_on.isoformat() }}" required></label>
               <label>Тип<select name="kind">{% for k,title in [('inflow','Поступление'),('outflow','Расход'),('transfer','Перевод'),('correction','Корректировка')] %}<option value="{{ k }}" {% if e.kind.value == k %}selected{% endif %}>{{ title }}</option>{% endfor %}</select></label>
-              <label>Счёт<select name="account_id">{% for a in accounts %}<option value="{{ a.id }}" {% if e.legs[0].account_id == a.id %}selected{% endif %}>{{ a.name }}</option>{% endfor %}</select></label>
-              <label>Куда (для перевода)<select name="to_account_id"><option value="">—</option>{% for a in accounts %}<option value="{{ a.id }}" {% if e.legs|length == 2 and e.legs[1].account_id == a.id %}selected{% endif %}>{{ a.name }}</option>{% endfor %}</select></label>
+              <label>Банк или наличные<select name="account_id">{% for a in accounts %}<option value="{{ a.id }}" {% if e.legs[0].account_id == a.id %}selected{% endif %}>{{ account_labels[a.id] }}</option>{% endfor %}</select></label>
+              <label>Куда (для перевода)<select name="to_account_id"><option value="">—</option>{% for a in accounts %}<option value="{{ a.id }}" {% if e.legs|length == 2 and e.legs[1].account_id == a.id %}selected{% endif %}>{{ account_labels[a.id] }}</option>{% endfor %}</select></label>
               <label>Сумма (расход/перевод положит.)<input name="amount" value="{{ (e.legs[0].change.amount|abs) if e.kind.value in ['outflow','transfer'] else e.legs[0].change.amount }}" required data-grouped inputmode="decimal"></label>
               <label>Пояснение<input name="note" value="{{ e.note or '' }}"></label>
               <button class="mini">Сохранить</button>
@@ -650,5 +768,11 @@
     {% endif %}
     <footer>Fin · локальный браузер · данные SQLite в личной папке · без рыночной переоценки и FX · не открывать в сеть без авторизации</footer>
   </main>
+  <dialog id="fin-dialog" aria-label="Подтверждение действия">
+    <div class="dialog-toolbar"><strong>Проверка действия</strong>
+      <button type="button" class="dialog-dismiss" data-close-dialog aria-label="Закрыть окно">✕</button></div>
+    <div id="dialog-body"></div>
+  </dialog>
+  <div id="fin-toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
