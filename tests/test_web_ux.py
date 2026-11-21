@@ -142,7 +142,7 @@ def test_security_policy_allows_local_css_without_external_dependencies(browser)
     assert 'href="/assets/bank.css"' in page.text
     assert 'src="/assets/bank.js"' in page.text
     assert (
-        'rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=ux17-3"'
+        'rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=ux17-4"'
         in page.text
     )
     favicon = client.get("/assets/favicon-32.png")
@@ -155,6 +155,7 @@ def test_security_policy_allows_local_css_without_external_dependencies(browser)
     assert "script-src 'self'" in policy
     assert "connect-src 'self'" in policy
     assert "default-src 'none'" in policy
+    assert "img-src 'self'" in policy
 
 
 def test_fin_no_script_fallback_still_has_delete_confirmation_form(browser):
