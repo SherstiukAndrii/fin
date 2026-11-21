@@ -363,6 +363,10 @@ of cash under the bank-account deletion label, cash deletion has its own
 signed preview type and uses the same backup and dependency checks.
 No migration or data rewrite is performed.
 
+## Local favicon
+
+Fin ships a small transparent PNG favicon derived from the generated duck-sailor mascot, cropped for recognizability at 32 × 32 pixels. The icon loads locally from `/assets/favicon-32.png`, is included in the Python package and requires no external web service. The icon is illustrative and not intended as an official Disney/Donald Duck asset. This change is a separate, descriptive follow-up commit in PR #17, preserving prior review history.
+
 ## Bank workspace and date navigation
 
 The Bank interface uses six focused workspaces: **Overview**, **Accounts**,
