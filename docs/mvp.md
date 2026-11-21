@@ -175,3 +175,30 @@ assets must be included in the Python package and permitted by the CSP.
 Regression tests cover the date, tab links, CSS, JavaScript, CSRF preview
 and financial snapshot integrity; JavaScript syntax is checked in CI.
 
+## Task-first interaction experiment (PR #20)
+
+Implement `/workspace` as a **separate, reversible UI experiment**, based
+on PR #17 and independent of the two CSS-only proposals (#18 and #19).
+The basic UX unit changes from a whole section/page to **one selected
+financial object**. A short home screen suggests tasks (record movement,
+add an investment, perform reconciliation). Dedicated searchable lists
+reveal a single account/cash location, investment, payout, posted event or
+control snapshot in a contextual inspector. The inspector shows only
+object-specific facts and related actions, never six entire editable tables.
+
+Navigation and inspection use validated server-side GET requests, the
+existing `_read_view` and the same as-of calculation. Interactive form
+dialogs fetch the original local `/bank` form for the chosen operation
+and submit it unchanged through existing audited routes. Deletion must still
+require CSRF, a signed read-only dependency preview, a typed confirmation,
+SQLite backup and atomic deletion. Import remains local and requires an
+explicit preview confirmation. The old Bank page is a visible fallback,
+not removed or overwritten.
+
+No new financial calculations, schema migrations, generated personal
+financial fixtures, or internet requirements are introduced. Automated tests
+must validate every focus route, per-entity controls, cash/bank separation,
+CSRF-protected legacy actions, offline CSS/JS and no ledger mutation on GET.
+Browser ergonomics remain a separate manual review requirement; prototype
+alternatives must not be merged simultaneously without choosing a direction.
+

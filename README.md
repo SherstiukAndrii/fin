@@ -391,3 +391,27 @@ No CDN, telemetry, cookies or external data source are required. The
 JavaScript source is syntax-checked in CI; backend behavior and currency
 calculations remain unchanged.
 
+## Experimental task-first workspace (PR #20)
+
+The standalone task-first UI lives at `http://127.0.0.1:8765/workspace`.
+Unlike the six broad Bank sections, this alternative starts with a short
+*what do you need to do?* home page. Choosing Money, Portfolio, Payouts,
+History or Reconciliation shows a small, searchable object list; selecting
+one row opens a single detail inspector. The user never needs to scroll
+past unrelated forms to find an entity. The viewing date remains separate
+from record-effective dates, and per-currency actual/potential balances
+remain distinct.
+
+Creation, editing, security-statement preview, factual payouts and deletion
+open purpose-specific modal forms pulled **locally** from the existing
+`/bank` server forms. Actions continue to use the existing CSRF-protected
+`/bank` endpoints, signed deletion previews and backups; this prototype
+does not introduce alternate financial calculations or database writes.
+The old `/bank` remains available via a link, including as a progressive
+enhancement fallback. Both interfaces access the same private SQLite;
+do not run them with separate or copied live data while comparing.
+
+This is an alternative UI proposal for review, not a new accounting feature,
+and has not been visually validated in the owner's browser. No external
+fonts, CDN, telemetry or account data uploads are used.
+

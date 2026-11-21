@@ -742,6 +742,106 @@ def create_app(db_path: str | Path) -> FastAPI:
             return HTMLResponse("Invalid evaluation date", status_code=422)
         return render_bank(request, selected)
 
+    @app.get("/workspace", response_class=HTMLResponse)
+    def task_workspace(
+        request: Request,
+        area: str = "home",
+        target: str | None = None,
+        as_of: str | None = None,
+    ):
+        """Alternative task-first interface; existing Bank routes remain intact."""
+        if area not in {"home", "money", "assets", "due", "activity", "review"}:
+            return HTMLResponse("Unknown workspace", status_code=404)
+        try:
+            selected = date.fromisoformat(as_of) if as_of else date.today()
+        except ValueError:
+            return HTMLResponse("Invalid evaluation date", status_code=422)
+        missing = not db_path.is_file()
+        if missing:
+            data = {
+                "accounts": (),
+                "bank_accounts": (),
+                "cash_locations": (),
+                "account_labels": {},
+                "balances": {},
+                "outlook": None,
+                "investment_rows": (),
+                "payments": (),
+                "events": (),
+                "controls": (),
+                "opening": None,
+                "warning": None,
+            }
+        else:
+            with SQLiteCashRepository(db_path) as repo:
+                data = _read_view(repo, selected)
+
+        selected_account = next(
+            (account for account in data["accounts"] if account.id == target),
+            None,
+        ) if area == "money" else None
+        selected_asset = None
+        if area == "assets" and target is not None:
+            try:
+                position = int(target)
+                if 0 <= position < len(data["investment_rows"]):
+                    selected_asset = data["investment_rows"][position]
+            except (ValueError, TypeError):
+                pass
+        selected_payment = next(
+            (payment for payment in data["payments"] if payment["id"] == target),
+            None,
+        ) if area == "due" else None
+        selected_event = next(
+            (event for event in data["events"] if event.id == target),
+            None,
+        ) if area == "activity" else None
+        selected_control = next(
+            (control for control in data["controls"] if control["id"] == target),
+            None,
+        ) if area == "review" else None
+        related_events = (
+            tuple(
+                event for event in data["events"]
+                if any(leg.account_id == selected_account.id for leg in event.legs)
+            )[:8]
+            if selected_account else ()
+        )
+        related_payments = (
+            tuple(
+                payment for payment in data["payments"]
+                if payment["holding"] == selected_asset.get("id")
+            )
+            if selected_asset and selected_asset.get("id") else ()
+        )
+        outstanding = tuple(
+            payment for payment in data["payments"]
+            if payment["outstanding"].amount > 0
+        )
+        overdue_count = sum(payment["due"] < selected for payment in outstanding)
+        return _TEMPLATES.TemplateResponse(
+            request=request,
+            name="workspace.html",
+            context={
+                **data,
+                "area": area,
+                "target": target,
+                "selected_account": selected_account,
+                "selected_asset": selected_asset,
+                "selected_payment": selected_payment,
+                "selected_event": selected_event,
+                "selected_control": selected_control,
+                "related_events": related_events,
+                "related_payments": related_payments,
+                "outstanding": outstanding,
+                "overdue_count": overdue_count,
+                "as_of": selected,
+                "today": date.today(),
+                "csrf": token,
+                "missing_db": missing,
+            },
+        )
+
     @app.post("/bank/delete/preview", response_class=HTMLResponse)
     async def preview_delete(request: Request):
         """Show exact dependent records and cash effects before any deletion."""
