@@ -141,7 +141,10 @@ def test_security_policy_allows_local_css_without_external_dependencies(browser)
     page = client.get("/bank")
     assert 'href="/assets/bank.css"' in page.text
     assert 'src="/assets/bank.js"' in page.text
-    assert 'rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=ux17-3"' in page.text
+    assert (
+        'rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=ux17-3"'
+        in page.text
+    )
     favicon = client.get("/assets/favicon-32.png")
     assert favicon.status_code == 200
     assert favicon.headers["content-type"].startswith("image/png")
