@@ -28,12 +28,21 @@
     .right{text-align:right}code{background:#edf2f7;padding:2px 4px}footer{color:#8290a3;font-size:12px;margin:30px 0}
     a{color:#2453a4}.edit{min-width:130px}.mini{font-size:12px;padding:7px}
     .subrow{background:#f7f9ff}.muted{color:#8591a0;font-size:12px}
+    .danger{background:#b73535}.remove-form{display:inline-block;margin:3px 0}
     @media(max-width:680px){main{padding:8px}.card{padding:11px}th,td{padding:7px}}
   </style>
   <script src="/assets/bank.js" defer></script>
 </head>
 <body>
   {% macro token() -%}<input type="hidden" name="csrf" value="{{ csrf }}">{%- endmacro %}
+  {% macro delete_action(kind, identifier, label='Удалить') -%}
+    <form class="remove-form" method="post" action="/bank/delete/preview?as_of={{ as_of.isoformat() }}">
+      {{ token() }}
+      <input type="hidden" name="kind" value="{{ kind }}">
+      <input type="hidden" name="identifier" value="{{ identifier|forceescape }}">
+      <button type="submit" class="mini danger">{{ label }}</button>
+    </form>
+  {%- endmacro %}
   {% macro prior(route,key,default='') -%}{{ form_values.get(key,default) if failed_form == route else default }}{%- endmacro %}
   {% macro chosen(route,key,choice,default='') -%}{% if (form_values.get(key,default) if failed_form == route else default) == choice %}selected{% endif %}{%- endmacro %}
   {% macro payout_row(kind, day, amount, investment) -%}
@@ -56,6 +65,52 @@
       <button class="mini" type="button" data-schedule-remove>Удалить строку</button>
     </div>
   {%- endmacro %}
+    {% macro holding_editor(h, heading='Изменить') -%}
+        <details><summary>{{ heading }}</summary>
+          {% if h.type == 'OVGZ / bond' %}
+          <form method="post" action="/bank/edit_bond">{{ token() }}
+            <input type="hidden" name="id" value="{{ h.id }}"><input type="hidden" name="currency" value="{{ h.currency }}">
+            <p class="small">ISIN {{ h.model.instrument.isin }}; номинал и дата погашения остаются неизменными.</p>
+            <div class="grid">
+              <label>Банк / брокер / депозитарий
+                <select name="custodian">
+                  <option value="" {% if h.model.custodian is none %}selected{% endif %}>Не указан</option>
+                  {% for provider in custodian_names %}
+                  <option value="{{ provider }}" {% if h.model.custodian == provider %}selected{% endif %}>{{ provider }}</option>
+                  {% endfor %}
+                  <option value="__other__">Другой банк / брокер…</option>
+                </select>
+              </label>
+              <label>Если учреждения нет в списке<input name="custodian_other" placeholder="Например, Freedom24"></label>
+              <label>Куплено<input type="date" name="acquired_on" value="{{ h.model.acquired_on.isoformat() }}" required></label>
+              <label>Штук<input type="text" name="quantity" value="{{ h.model.quantity }}" min="1" required data-grouped inputmode="numeric"></label>
+              <label>Цена за штуку<input name="unit_price" value="{{ h.model.unit_price.amount if h.model.unit_price else '' }}" data-grouped inputmode="decimal"></label>
+              <label>Комиссия за лот<input name="paid_fees" value="{{ h.model.paid_fees.amount if h.model.paid_fees else '' }}" data-grouped inputmode="decimal"></label>
+            </div><button class="mini">Сохранить</button>
+          </form>
+          {% else %}
+          <form method="post" action="/bank/edit_deposit">{{ token() }}
+            <input type="hidden" name="id" value="{{ h.id }}"><input type="hidden" name="currency" value="{{ h.currency }}">
+            <div class="grid">
+              <label>Банк
+                <select name="bank" required>
+                  <option value="" disabled>Выбери банк</option>
+                  {% for name in bank_names %}
+                  <option value="{{ name }}" {{ chosen('edit_deposit','bank',name,h.model.bank) }}>{{ name }}</option>
+                  {% endfor %}
+                  <option value="__other__" {{ chosen('edit_deposit','bank','__other__',h.model.bank) }}>Другой банк…</option>
+                </select>
+              </label>
+              <label>Если банка нет в списке<input name="bank_other" value="{{ prior('edit_deposit','bank_other') }}" placeholder="Название банка"></label>
+              <label>Тело<input name="principal" value="{{ h.model.principal.amount }}" required data-grouped inputmode="decimal"></label>
+              <label>Открыт<input name="opened_on" type="date" value="{{ h.model.opened_on.isoformat() }}" required></label>
+              <label>Погашение<input name="matures_on" type="date" value="{{ h.model.matures_on.isoformat() }}" required></label>
+              <label>Годовая ставка долей<input name="annual_rate" value="{{ h.model.annual_rate if h.model.annual_rate is not none else '' }}" data-grouped inputmode="decimal"></label>
+            </div><button class="mini">Сохранить</button>
+          </form>{% endif %}
+        </details>
+        {{ delete_action('holding', h.id, 'Удалить вложение') }}
+  {%- endmacro %}
   <header><strong>fin.</strong><span>Bank</span><span>Overview — позже</span></header>
   <main>
     <div class="bar"><div><h1>Bank</h1><p class="small">Деньги и вложения. Плановые выплаты не прибавляются к счёту.</p></div>
@@ -66,6 +121,29 @@
     <section class="banner">База не создана. В VS Code запусти <code>Fin: DB Init</code> или <code>python -m fin db init</code>.</section>
     {% else %}
     {% if warning %}<div class="banner">{{ warning }}</div>{% endif %}
+    {% if delete_plan %}
+    <section class="card" id="confirm-deletion">
+      <h2>Подтверждение удаления: {{ delete_plan.title }}</h2>
+      <p>Будут удалены следующие связанные записи:</p>
+      <ul>{% for label, count in delete_plan.counts %}
+        <li>{{ label }}: <strong>{{ count }}</strong></li>
+      {% endfor %}</ul>
+      {% for message in delete_plan.warnings %}
+        <p class="banner" role="alert">{{ message }}</p>
+      {% endfor %}
+      <p class="small">До удаления будет сохранена резервная копия SQLite вне репозитория.
+        Это удаление необратимо в интерфейсе; связанные суммы и прогнозы пересчитаются.
+        Если данные изменились с момента просмотра, операция будет отклонена.</p>
+      <form method="post" action="/bank/delete/confirm?as_of={{ as_of.isoformat() }}">
+        {{ token() }}<input type="hidden" name="deletion_token" value="{{ delete_token }}">
+        <label>Чтобы подтвердить, напиши УДАЛИТЬ
+          <input name="confirmation" required autocomplete="off" pattern="УДАЛИТЬ">
+        </label>
+        <button class="danger" type="submit">Подтвердить удаление</button>
+      </form>
+      <a href="/bank?as_of={{ as_of.isoformat() }}">Отмена</a>
+    </section>
+    {% endif %}
 
     <section class="card" id="accounts"><h2>Счета и остатки</h2>
       {% if accounts %}
@@ -78,7 +156,9 @@
             <label>Название<input name="name" required value="{{ a.name }}"></label>
             <label>Тип<select name="kind"><option value="bank" {% if a.kind.value == 'bank' %}selected{% endif %}>Банковский</option><option value="cash" {% if a.kind.value == 'cash' %}selected{% endif %}>Наличные</option></select></label>
             <button class="mini">Сохранить</button>
-          </form></details></td>
+          </form></details>
+          {{ delete_action('account', a.id, 'Удалить счёт') }}
+        </td>
       </tr>{% endfor %}</tbody></table></div>
       <p class="small">Суммы в разных валютах не складываются без датированного курса.</p>
       {% else %}<p class="small">Счета пока не созданы.</p>{% endif %}
@@ -110,6 +190,7 @@
           <input name="balance_{{ b.account_id }}" value="{{ b.amount.amount }}" required data-grouped inputmode="decimal"></label>{% endfor %}</div>
           <button class="mini">Сохранить</button>
         </form></details>
+      {{ delete_action('opening', '1', 'Удалить начальный снимок') }}
       <details id="form-event" open><summary>Новая денежная операция</summary>
         <form method="post" action="/bank/event">{{ token() }}
           <div class="grid">
@@ -187,6 +268,7 @@
       {% if controls %}
       {% for control in controls %}
       <h3>Контроль на {{ control.as_of }}{% if control.note %} · {{ control.note }}{% endif %}</h3>
+      {{ delete_action('control', control.id, 'Удалить сверку') }}
       <div class="scroll"><table><thead><tr><th>Счёт</th><th>Факт</th><th>Расчёт при записи</th>
         <th>Расчёт сейчас</th><th>Разница сейчас</th><th>Сверка</th></tr></thead><tbody>
         {% for row in control.rows %}
@@ -228,57 +310,133 @@
       {% endif %}
     </section>
 
+    <section class="card" id="imported-securities">
+      <h2>Мои ОВГЗ — импорт выписок</h2>
+      <p class="small">Загружай PDF-выписки через локальный Fin. До подтверждения данные не записываются.
+        ФИО, номера счетов и сами документы не сохраняются в Fin; в SQLite попадают только
+        сведения о бумаге, количестве и депозитарии. При подтверждении создаётся резервная копия.</p>
+      <details id="form-securities-import" {% if import_preview %}open{% endif %}>
+        <summary>Загрузить выписки (PDF)</summary>
+        <form method="post" action="/bank/securities/preview" enctype="multipart/form-data">
+          {{ token() }}
+          <label>PDF выписки (до 16 файлов, каждый не больше 8 МБ)
+            <input type="file" name="documents" accept="application/pdf,.pdf" multiple required></label>
+          <button>Предпросмотр без записи</button>
+          <p class="small">Поддерживаются выписки о состоянии счёта и отчёты об операциях от распознанных
+            депозитариев. Данные со сканированных изображений без текстового слоя пока не читаются.</p>
+        </form>
+      </details>
+      {% if import_preview %}
+      <h3>Проверь распознанные записи перед импортом</h3>
+      <div class="scroll"><table><thead><tr>
+        <th>Депозитарий</th><th>ISIN</th><th>Дата</th><th>Источник</th><th>Штук</th><th>Номинал за 1 шт.</th>
+      </tr></thead><tbody>
+      {% for p in import_preview %}<tr>
+        <td>{{ p.custodian }}</td><td><strong>{{ p.isin }}</strong></td><td>{{ p.as_of }}</td>
+        <td>{{ 'Остаток на дату' if p.kind == 'closing' else 'Изменение по операции' }}</td>
+        <td class="num">{{ p.quantity|amount }}</td>
+        <td class="num">{% if p.nominal_per_unit %}{{ p.nominal_per_unit.amount|amount }} {{ p.nominal_per_unit.currency }}{% else %}Не указан{% endif %}</td>
+      </tr>{% endfor %}
+      </tbody></table></div>
+      <p class="small">Операции без начального остатка не подтверждают размер всего портфеля.
+        Конечный остаток заменяет более ранние движения по тому же ISIN и депозитарию,
+        а не прибавляется к ним.</p>
+      <form method="post" action="/bank/securities/confirm">{{ token() }}
+        <input type="hidden" name="preview_token" value="{{ import_token }}">
+        <button>Подтвердить и импортировать</button>
+      </form>
+      {% endif %}
+      {% if request.query_params.get('imported') is not none %}
+      <p class="notice">Новых записей импортировано: {{ request.query_params.get('imported') }}.
+        Дубликаты пропущены.</p>
+      {% endif %}
+      {% if imported_entries %}
+      <details id="import-records"><summary>Управление импортированными записями ({{ imported_entries|length }})</summary>
+        <p class="small">Удаление одной выписки пересчитает позицию на выбранную дату.
+          Предпросмотр покажет последствия, а сама выписка в Fin не хранится.</p>
+        <div class="scroll"><table><thead><tr><th>Депозитарий</th><th>ISIN</th><th>Дата</th><th>Тип</th><th>Штук</th><th>Действие</th></tr></thead>
+        <tbody>{% for e in imported_entries %}<tr>
+          <td>{{ e.custodian }}</td><td>{{ e.isin }}</td><td>{{ e.as_of }}</td>
+          <td>{{ 'Остаток' if e.kind == 'closing' else 'Движение' }}</td>
+          <td>{{ e.quantity|amount }}</td>
+          <td>{{ delete_action('securities_import', e.source_hash, 'Удалить запись') }}</td>
+        </tr>{% endfor %}</tbody></table></div>
+      </details>
+      {% endif %}
+      {% if imported_positions %}
+      <p class="notice">Позиции из выписок показаны в разделе
+        <a href="#holdings">«Вложения»</a>. Подтверждённые остатки не суммируются с совпадающими
+        ручными лотами; движения без остатка помечены отдельно.</p>
+      {% else %}<p class="small">Импортированных ОВГЗ пока нет.</p>{% endif %}
+    </section>
+
     <section class="card" id="holdings">
-      <h2>Вложения <span class="pill">{{ holdings|length }}</span></h2>
-      {% if holdings %}
-      <div class="scroll"><table><thead><tr><th>Тип</th><th>Инструмент / учреждение</th><th>Количество / тело</th><th>Себестоимость</th><th>Погашение</th><th></th></tr></thead>
-      <tbody>{% for h in holdings %}<tr><td>{{ h.type }}</td><td><strong>{{ h.name }}</strong>{% if h.type == 'OVGZ / bond' %}<div class="muted">{{ h.custodian }}</div>{% endif %}</td>
-        <td class="num">{{ h.amount }} {{ h.currency }}</td><td class="num">{{ h.cost }}</td>
+      <h2>Вложения <span class="pill">{{ investment_rows|length }}</span></h2>
+      {% if investment_rows %}
+      <div class="scroll"><table><thead><tr>
+        <th>Тип</th><th>Инструмент / учреждение</th><th>Количество / тело</th>
+        <th>Себестоимость</th><th>Погашение</th><th>Источник / изменение</th>
+      </tr></thead><tbody>
+      {% for h in investment_rows %}<tr>
+        <td>{{ h.type }}</td>
+        <td><strong>{{ h.name }}</strong>
+          {% if h.type == 'OVGZ / bond' %}<div class="muted">{{ h.custodian }}</div>{% endif %}
+          {% if h.imported %}
+            <div class="muted">Импорт из выписки · {{ h.as_of }}</div>
+          {% elif h.movement_notice %}
+            <div class="muted">В выписке есть движение, но полный остаток не подтверждён</div>
+          {% endif %}
+        </td>
+        <td class="num">{{ h.amount }} {{ h.currency }}
+          {% if h.imported and h.nominal %}
+          <div class="small">Номинал: {{ h.nominal.amount|amount }} {{ h.nominal.currency }}</div>
+          {% endif %}
+        </td>
+        <td class="num">{{ h.cost }}</td>
         <td>{{ h.maturity }}</td>
-        <td><details><summary>Изменить</summary>
-          {% if h.type == 'OVGZ / bond' %}
-          <form method="post" action="/bank/edit_bond">{{ token() }}
-            <input type="hidden" name="id" value="{{ h.id }}"><input type="hidden" name="currency" value="{{ h.currency }}">
-            <p class="small">ISIN {{ h.model.instrument.isin }}; номинал и дата погашения остаются неизменными.</p>
-            <div class="grid">
-              <label>Банк / брокер / депозитарий
-                <select name="custodian">
-                  <option value="" {% if h.model.custodian is none %}selected{% endif %}>Не указан</option>
-                  {% for provider in custodian_names %}
-                  <option value="{{ provider }}" {% if h.model.custodian == provider %}selected{% endif %}>{{ provider }}</option>
-                  {% endfor %}
-                  <option value="__other__">Другой банк / брокер…</option>
-                </select>
-              </label>
-              <label>Если учреждения нет в списке<input name="custodian_other" placeholder="Например, Freedom24"></label>
-              <label>Куплено<input type="date" name="acquired_on" value="{{ h.model.acquired_on.isoformat() }}" required></label>
-              <label>Штук<input type="text" name="quantity" value="{{ h.model.quantity }}" min="1" required data-grouped inputmode="numeric"></label>
-              <label>Цена за штуку<input name="unit_price" value="{{ h.model.unit_price.amount if h.model.unit_price else '' }}" data-grouped inputmode="decimal"></label>
-              <label>Комиссия за лот<input name="paid_fees" value="{{ h.model.paid_fees.amount if h.model.paid_fees else '' }}" data-grouped inputmode="decimal"></label>
-            </div><button class="mini">Сохранить</button>
-          </form>
+        <td>
+          {% if h.imported %}
+            {% if h.confirmed %}
+              <strong>Подтверждённый остаток</strong>
+            {% else %}
+              <span class="muted">Только изменение количества; общий остаток неизвестен</span>
+            {% endif %}
+            {{ delete_action('import_position', [h.custodian, h.name]|tojson, 'Удалить позицию') }}
           {% else %}
-          <form method="post" action="/bank/edit_deposit">{{ token() }}
-            <input type="hidden" name="id" value="{{ h.id }}"><input type="hidden" name="currency" value="{{ h.currency }}">
-            <div class="grid">
-              <label>Банк
-                <select name="bank" required>
-                  <option value="" disabled>Выбери банк</option>
-                  {% for name in bank_names %}
-                  <option value="{{ name }}" {{ chosen('edit_deposit','bank',name,h.model.bank) }}>{{ name }}</option>
-                  {% endfor %}
-                  <option value="__other__" {{ chosen('edit_deposit','bank','__other__',h.model.bank) }}>Другой банк…</option>
-                </select>
-              </label>
-              <label>Если банка нет в списке<input name="bank_other" value="{{ prior('edit_deposit','bank_other') }}" placeholder="Название банка"></label>
-              <label>Тело<input name="principal" value="{{ h.model.principal.amount }}" required data-grouped inputmode="decimal"></label>
-              <label>Открыт<input name="opened_on" type="date" value="{{ h.model.opened_on.isoformat() }}" required></label>
-              <label>Погашение<input name="matures_on" type="date" value="{{ h.model.matures_on.isoformat() }}" required></label>
-              <label>Годовая ставка долей<input name="annual_rate" value="{{ h.model.annual_rate if h.model.annual_rate is not none else '' }}" data-grouped inputmode="decimal"></label>
-            </div><button class="mini">Сохранить</button>
-          </form>{% endif %}
-        </details></td></tr>{% endfor %}</tbody></table></div>
-      {% else %}<p class="small">Вложения ещё не внесены. Добавь депозит или облигацию с подтверждёнными реквизитами.</p>{% endif %}
+            {{ holding_editor(h) }}
+          {% endif %}
+        </td>
+      </tr>{% endfor %}
+      </tbody></table></div>
+      {% else %}
+      <p class="small">Вложения ещё не внесены. Импортируй выписку или добавь депозит/облигацию.</p>
+      {% endif %}
+      {% if security_nominal_totals %}
+      <p><strong>Подтверждённый номинал по импортированным ОВГЗ:</strong>
+        {% for currency,amount in security_nominal_totals %}
+          {{ amount|amount }} {{ currency }}{% if not loop.last %}; {% endif %}
+        {% endfor %}
+      </p>
+      {% endif %}
+      <p class="small">Номинал — не рыночная цена и не себестоимость. Неизвестные цены покупки и
+        даты погашения остаются неизвестными. Импорт не создаёт выплаты и не меняет деньги.
+        Для совпадения ручного лота и выписки сравниваются ISIN и точное название депозитария.</p>
+      {% if matched_manual %}
+      <details id="manual-matched-lots"><summary>Ручные лоты, совпадающие с выпиской
+        ({{ matched_manual|length }}) — редактирование условий</summary>
+        <p class="small">Эти лоты сохраняют свои даты, себестоимость и планы выплат,
+          но <strong>не показываются второй раз как отдельные позиции</strong>.</p>
+        <div class="scroll"><table><thead><tr>
+          <th>Ручной лот</th><th>Договорные данные</th><th>Действие</th>
+        </tr></thead><tbody>
+          {% for h in matched_manual %}<tr>
+            <td><strong>{{ h.name }}</strong><div class="muted">{{ h.custodian }}</div></td>
+            <td>{{ h.amount }} {{ h.currency }} · погашение {{ h.maturity }}</td>
+            <td>{{ holding_editor(h, 'Изменить ручной лот') }}</td>
+          </tr>{% endfor %}
+        </tbody></table></div>
+      </details>
+      {% endif %}
       <details id="form-bond" {% if failed_form == 'bond' %}open{% endif %}><summary>Добавить ОВГЗ / облигацию</summary>
         <form method="post" action="/bank/bond">{{ token() }}
           {% if failed_form == 'bond' %}<p class="banner" role="alert">{{ form_error }}</p>{% endif %}
@@ -402,6 +560,7 @@
             </form>
           </details>
           {% endif %}
+          {{ delete_action('payment', p.id, 'Удалить выплату') }}
           <details><summary>Записать факт</summary>
             <form method="post" action="/bank/receipt">{{ token() }}
               <input type="hidden" name="payment_id" value="{{ p.id }}">
@@ -431,6 +590,7 @@
                 <button class="mini">Сохранить</button>
               </form>
             </details>{% endif %}
+            {{ delete_action('receipt', item.item.id, 'Удалить факт') }}
           </td>
         </tr>{% endfor %}
       {% endfor %}</tbody></table></div>
@@ -482,6 +642,7 @@
             </form>
           </details>
           {% else %}<div class="small">Поступление по инвестиции; не редактируется напрямую</div>{% endif %}
+          {{ delete_action('cash_event', e.id, 'Удалить операцию') }}
         </td>
       </tr>{% endfor %}</tbody></table></div>
       {% else %}<p class="small">Подтверждённых операций пока нет.</p>{% endif %}

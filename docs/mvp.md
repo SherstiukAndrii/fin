@@ -91,3 +91,45 @@ automation remains a later stage.
 7. **Multiple OVGZ coupons and final redemption.** Example: two bonds, nominal 1,000 UAH each, pay 40 UAH **per bond** on each of three distinct dates (March 1, June 1, September 1). Forecast **80 UAH** on each coupon date (total **240 UAH**) and **2,000 UAH** principal at maturity on December 1, with no additional coupon unless separately scheduled. Each actual receipt affects actual cash only when received; any missed or partial coupon remains outstanding. Coupons do not release principal/cost basis; the final redemption releases the remaining principal exactly once. Do not automatically reinvest returned money.
 8. **Inflation and horizon.** At the projection start, nominal and real Total are equal in the same currency. With zero inflation they stay equal at all projected points. Nonzero annual inflation uses compounding from the projection start. Show monthly data for 50 years and daily detail for short intervals; switching reporting currency does not rewrite source holdings.
 9. **Offline and recovery.** Restart the app offline and confirm persisted positions, observations, events and valuations. Verify scheduled local backup, manual export/restore and record integrity using test fixtures. No real account details or API keys in tests.
+
+## Initial securities PDF import (SQLite v5)
+
+Support privacy-preserving local import of recognized depositary position
+statements and securities operation statements. Statements must be inspected
+via **preview before confirmation** and the import is backed up atomically in
+SQLite. Store no raw document, name, tax number, passport, client account
+identifier or trade contract. Retain only an opaque hash to prevent duplicate
+imports and normalized public ISIN, custodian, date, quantity, type and known
+nominal. Historical security operations without a confirmed closing position
+are reported as **net movements**, not as total holdings. Later end-of-day
+closing balances supersede older operations at that institution and ISIN; later
+operations apply once. Distinguish acquisition cost, nominal and market value;
+unknown values stay unknown, and no planned coupon or actual cash is fabricated.
+The main Investments table shows imported closing positions together with
+unmatched manual holdings and deposits. For matching ISIN + custodian,
+confirmed closing quantities take precedence in the displayed position;
+the associated manual contract lots remain separately editable, not added
+as new assets. Movement-only records never replace known manual lots.
+No cash or forecast obligation is created just by importing a statement.
+
+## Deleting entities
+
+The user may remove any currently supported Bank object through a two-step
+preview/confirmation flow. The visible entities include accounts, opening
+snapshot, cash events, monthly controls, investments, scheduled payouts,
+actual receipts, imported statements, and imported security positions. Persist
+no guessed amounts: removal of a posted receipt undoes its linked account credit;
+removal of a parent investment cascades only its related payouts, receipts and
+credits, with impact visible in preview. Removing a confirmed monthly
+reconciliation also undoes its linked correction. A correction event can instead
+be deleted while retaining the original observed control snapshot.
+
+Account or opening-snapshot removal must be blocked when it would invalidate
+existing account history or month-end observations. Permit it only when the
+relevant dependencies have been removed explicitly. Preview is read-only,
+contains an authoritative dependency summary, and issues a signed fingerprint
+for stale-submit detection. Confirmation requires a typed instruction, CSRF,
+full SQLite backup outside the repository, an atomic write transaction and
+foreign-key checks. No hidden cascade from account deletion, no database
+migration, no personal fixture, no automatic import remapping or new cash flow.
+

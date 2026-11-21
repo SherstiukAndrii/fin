@@ -2,7 +2,7 @@
 
 Single-user, offline-first personal finance app for Windows and Linux. The planned MVP contains **Bank** and **Overview**; see [MVP requirements](docs/mvp.md) and the [domain model](docs/domain-model.md).
 
-**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank/Cash persistence v4**. Actual cash ledger and dated opening snapshot are available in Python. First local Bank browser UI is available; Overview/FX still to come. Future investment calculators and statement analysis are documented under `docs/`.
+**Current state:** Python scaffold, exact `Money`, tested Bank-domain models and **SQLite Bank/Cash persistence v5**. Actual cash ledger and dated opening snapshot are available in Python. First local Bank browser UI is available; Overview/FX still to come. Future investment calculators and statement analysis are documented under `docs/`.
 
 ## Development with Windows + WSL (Ubuntu) + VS Code
 
@@ -101,7 +101,7 @@ Run **Fin: Check** in `fin.code-workspace` before review. SQLite storage, accoun
 
 ## SQLite Bank persistence
 
-`fin.persistence.SQLiteBankRepository` saves bond instruments/lots, deposits, explicit scheduled payments and confirmed receipts in a local SQLite file. It creates **schema version 4** on first open, preserves data when reopened, rejects unsupported future versions and enables foreign keys on every connection. `Decimal` amounts are stored as **TEXT**, not floating-point SQLite REAL. Unknown purchase prices/fees stay `NULL`, not zero.
+`fin.persistence.SQLiteBankRepository` saves bond instruments/lots, deposits, explicit scheduled payments and confirmed receipts in a local SQLite file. It creates **schema version 5** on first open, preserves data when reopened, rejects unsupported future versions and enables foreign keys on every connection. `Decimal` amounts are stored as **TEXT**, not floating-point SQLite REAL. Unknown purchase prices/fees stay `NULL`, not zero.
 
 ```python
 from pathlib import Path
@@ -110,7 +110,7 @@ from fin.persistence import SQLiteBankRepository
 
 Path("data").mkdir(exist_ok=True)
 with SQLiteBankRepository(Path.home() / ".local/share/fin/fin.sqlite3") as repository:
-    assert repository.schema_version() == 4
+    assert repository.schema_version() == 5
     # repository.add_bond_lot(lot)
     # repository.add_payment(scheduled_payment)
     # repository.add_receipt(actual_receipt)
@@ -284,3 +284,62 @@ untracked files inside the repository (including `data/fin.sqlite3` and
 
 Old staging tables in existing SQLite databases are left untouched by this
 cleanup. No financial records or user databases are deleted.
+
+## Offline import of securities account statements (SQLite v5)
+
+The Bank screen supports uploading up to 16 text-layer PDF statements from the
+recognized securities institutions. The PDF is processed **in memory**; neither
+its raw bytes nor depositor names, tax IDs, passport numbers, account identifiers,
+signatures or trade-contract references are saved. Only document/event
+fingerprints and normalized custodian, ISIN, date, quantity, record kind and
+nominal-per-unit (when explicitly present) are stored locally in SQLite v5.
+Public Git and test fixtures contain only fictional values.
+
+Use **Preview** to review all parsed rows. **Confirm import** explicitly writes
+them after a separate SQLite backup outside the repository. Reimporting the same
+PDF or the same recognized source event is idempotent. A closing-balance report
+is authoritative for its custodian/ISIN/date; post-snapshot movements alone may
+change it. Movement-only reports show an *unconfirmed net change*, not a
+verified portfolio balance. **Imported positions appear directly in the
+Bank Investments ("Вложения") table**. A confirmed statement for the same
+ISIN and exact custodian replaces the corresponding manual lot rows in the
+main display; manual contract lots remain available in a separate expandable
+editor for cost, maturity and payout terms. Movement-only reports never
+override manually entered positions. Different custodians remain distinct.
+Unknown purchase cost, coupon dates, maturity and market prices are never
+guessed; the view never adds the same security twice. No cash posting or
+scheduled payment is created by import.
+
+The parser intentionally supports only verified layouts and rejects scanned
+PDFs, unknown institutions, ambiguous ISINs or mismatched nominal totals.
+Keep the entire workflow on localhost and never commit private statements.
+
+## Explicit deletion and dependency safety
+
+Bank supports deletion of cash accounts, the initial opening snapshot, cash
+events, monthly reconciliation snapshots, bond/deposit holdings, scheduled
+payments, actual receipts, imported PDF records, and entire imported securities
+positions. Every Delete action starts with a **read-only preview** showing the
+number of linked records and any potential effect on cash balances. A signed
+preview tied to the exact current database state, the CSRF token and typing
+**УДАЛИТЬ** are required before a deletion is accepted. Preview never changes
+the ledger.
+
+Before an approved deletion, Fin makes a private SQLite backup outside Git.
+Deletion is atomic and checks SQLite foreign-key integrity. A change to the
+selected records since preview invalidates confirmation. Historical data must
+not be silently rewritten: deleting a payout removes its related actual receipts
+and cash credits; deleting an investment removes its payout schedule and credits;
+deleting a monthly reconciliation removes its linked manual correction. Deleting
+a posted cash operation changes actual cash from its original date, while a
+monthly observation survives deletion of its correction event and can be reviewed
+again. A cash account with ledger or monthly reconciliation dependencies and an
+opening snapshot with live cash history cannot be deleted until those
+dependencies are intentionally removed. These operations are never automatic.
+
+Imported securities positions and imported source statements can be removed
+independently. Removing imported facts does not delete manually maintained
+bond contracts or create financial transactions. The procedure does not
+implement an undo button: restore a private backup if the deletion was a
+mistake. Use the delete preview to inspect every affected record count first.
+

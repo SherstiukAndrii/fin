@@ -190,11 +190,11 @@ def test_existing_v3_database_migrates_without_rewriting_balances(tmp_path):
                VALUES ('a', '123.456789', 'UAH')"""
         )
     with SQLiteCashRepository(path) as repo:
-        assert repo.schema_version() == 4
+        assert repo.schema_version() == 5
         assert repo.balances_on(date(2027, 1, 31))["a"] == money("123.456789")
         assert repo.list_monthly_controls() == ()
     with SQLiteCashRepository(path) as repo:
-        assert repo.schema_version() == 4
+        assert repo.schema_version() == 5
         assert repo.balances_on(date(2027, 1, 31))["a"] == money("123.456789")
     with sqlite3.connect(path) as db:
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
