@@ -138,9 +138,7 @@ def test_portfolio_detail_shows_specific_investment_and_its_payout(browser):
 
 def test_payment_detail_separates_plan_and_fact(browser):
     client, _ = browser
-    response = client.get(
-        "/workspace?area=due&target=fictional-coupon&as_of=2028-03-21"
-    )
+    response = client.get("/workspace?area=due&target=fictional-coupon&as_of=2028-03-21")
     assert response.status_code == 200
     assert "ПЛАНОВАЯ ВЫПЛАТА" in response.text
     assert "Фактически получено" in response.text

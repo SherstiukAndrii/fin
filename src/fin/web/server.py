@@ -776,10 +776,14 @@ def create_app(db_path: str | Path) -> FastAPI:
             with SQLiteCashRepository(db_path) as repo:
                 data = _read_view(repo, selected)
 
-        selected_account = next(
-            (account for account in data["accounts"] if account.id == target),
-            None,
-        ) if area == "money" else None
+        selected_account = (
+            next(
+                (account for account in data["accounts"] if account.id == target),
+                None,
+            )
+            if area == "money"
+            else None
+        )
         selected_asset = None
         if area == "assets" and target is not None:
             try:
@@ -788,35 +792,50 @@ def create_app(db_path: str | Path) -> FastAPI:
                     selected_asset = data["investment_rows"][position]
             except (ValueError, TypeError):
                 pass
-        selected_payment = next(
-            (payment for payment in data["payments"] if payment["id"] == target),
-            None,
-        ) if area == "due" else None
-        selected_event = next(
-            (event for event in data["events"] if event.id == target),
-            None,
-        ) if area == "activity" else None
-        selected_control = next(
-            (control for control in data["controls"] if control["id"] == target),
-            None,
-        ) if area == "review" else None
+        selected_payment = (
+            next(
+                (payment for payment in data["payments"] if payment["id"] == target),
+                None,
+            )
+            if area == "due"
+            else None
+        )
+        selected_event = (
+            next(
+                (event for event in data["events"] if event.id == target),
+                None,
+            )
+            if area == "activity"
+            else None
+        )
+        selected_control = (
+            next(
+                (control for control in data["controls"] if control["id"] == target),
+                None,
+            )
+            if area == "review"
+            else None
+        )
         related_events = (
             tuple(
-                event for event in data["events"]
+                event
+                for event in data["events"]
                 if any(leg.account_id == selected_account.id for leg in event.legs)
             )[:8]
-            if selected_account else ()
+            if selected_account
+            else ()
         )
         related_payments = (
             tuple(
-                payment for payment in data["payments"]
+                payment
+                for payment in data["payments"]
                 if payment["holding"] == selected_asset.get("id")
             )
-            if selected_asset and selected_asset.get("id") else ()
+            if selected_asset and selected_asset.get("id")
+            else ()
         )
         outstanding = tuple(
-            payment for payment in data["payments"]
-            if payment["outstanding"].amount > 0
+            payment for payment in data["payments"] if payment["outstanding"].amount > 0
         )
         overdue_count = sum(payment["due"] < selected for payment in outstanding)
         return _TEMPLATES.TemplateResponse(
