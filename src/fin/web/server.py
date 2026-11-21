@@ -44,6 +44,7 @@ from fin.web.import_preview import sign_preview, verify_preview
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 _KINDS = {
     "account",
+    "cash",
     "opening",
     "event",
     "bond",
@@ -156,14 +157,19 @@ def _scheduled_from_form(
 def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
     editing = kind.startswith("edit_")
     kind = kind.removeprefix("edit_")
-    if kind == "account":
+    if kind in {"account", "cash"}:
         account = CashAccount(
             _field(form, "id")
             if editing
-            else (_field(form, "id", optional=True) or _new_id("account")),
-            _field(form, "name"),
+            else (
+                _field(form, "id", optional=True)
+                or _new_id("cash" if kind == "cash" else "account")
+            ),
+            _field(form, "name", optional=True) or "На руках"
+            if kind == "cash"
+            else _field(form, "name"),
             _field(form, "currency").upper(),
-            AccountKind(_field(form, "kind")),
+            AccountKind.CASH if kind == "cash" else AccountKind(_field(form, "kind")),
         )
         if editing:
             repo.update_account(account)
@@ -415,6 +421,16 @@ def _backup_before_edit(path: Path) -> None:
 
 def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
     accounts = repo.list_accounts()
+    bank_accounts = tuple(account for account in accounts if account.kind == AccountKind.BANK)
+    cash_locations = tuple(account for account in accounts if account.kind == AccountKind.CASH)
+    account_labels = {
+        account.id: (
+            f"Наличные · {account.name} ({account.currency})"
+            if account.kind == AccountKind.CASH
+            else f"{account.name} ({account.currency})"
+        )
+        for account in accounts
+    }
     opening = repo.get_opening_snapshot()
     bank_names = tuple(
         sorted(
@@ -600,6 +616,9 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
     events = repo.list_cash_events()
     return {
         "accounts": accounts,
+        "bank_accounts": bank_accounts,
+        "cash_locations": cash_locations,
+        "account_labels": account_labels,
         "opening": opening,
         "bank_names": bank_names,
         "custodian_names": custodian_names,
@@ -642,7 +661,7 @@ def create_app(db_path: str | Path) -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'self'; "
+            "default-src 'none'; connect-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; "
             "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
         )
         return response
@@ -669,6 +688,9 @@ def create_app(db_path: str | Path) -> FastAPI:
         if not db_path.is_file():
             data = {
                 "accounts": (),
+                "bank_accounts": (),
+                "cash_locations": (),
+                "account_labels": {},
                 "opening": None,
                 "bank_names": (),
                 "custodian_names": (),
@@ -775,6 +797,7 @@ def create_app(db_path: str | Path) -> FastAPI:
                 repo.delete_with_plan(kind, identifier, digest)
             anchors = {
                 "account": "accounts",
+                "cash": "accounts",
                 "opening": "accounts",
                 "cash_event": "events",
                 "control": "monthly-controls",

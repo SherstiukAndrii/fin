@@ -28,5 +28,7 @@ jobs:
         run: ruff check .
       - name: Format
         run: ruff format --check .
+      - name: JavaScript syntax
+        run: node --check src/fin/web/static/bank.js
       - name: Test
         run: python -m pytest -v

@@ -13,7 +13,8 @@ import sqlite3
 from dataclasses import dataclass
 
 _TYPES = {
-    "account": "Счёт",
+    "account": "Банковский счёт",
+    "cash": "Наличные",
     "opening": "Начальный снимок",
     "cash_event": "Денежная операция",
     "control": "Месячная сверка",
@@ -100,22 +101,23 @@ def _select(db: sqlite3.Connection, kind: str, identifier: str):
             ).fetchone():
                 add("bond_instruments", "isin=?", (isin,))
 
-    if kind == "account":
-        add("cash_accounts", "id=?", (identifier,))
+    if kind in ("account", "cash"):
+        expected_kind = "cash" if kind == "cash" else "bank"
+        add("cash_accounts", "id=? AND kind=?", (identifier, expected_kind))
         if not selected["cash_accounts"]:
-            raise ValueError("Счёт не найден")
+            raise ValueError("Запись не найдена")
         if db.execute(
             "SELECT 1 FROM cash_legs WHERE account_id=? LIMIT 1", (identifier,)
         ).fetchone():
             raise ValueError(
-                "На счёте есть денежные операции. Удали связанные операции до удаления счёта."
+                "Для этого источника есть денежные операции. Удали связанные операции перед удалением."
             )
         if db.execute(
             "SELECT 1 FROM monthly_control_balances WHERE account_id=? LIMIT 1",
             (identifier,),
         ).fetchone():
             raise ValueError(
-                "Счёт участвует в месячных сверках. Удали связанные сверки до удаления счёта."
+                "Этот источник денег участвует в месячных сверках. Удали связанные сверки до удаления."
             )
         add("opening_balances", "account_id=?", (identifier,))
         if (
@@ -213,7 +215,18 @@ def _select(db: sqlite3.Connection, kind: str, identifier: str):
             "utf-8"
         )
     ).hexdigest()
-    counts = tuple((_LABELS[table], len(rows)) for table, rows in selected.items() if rows)
+    counts = tuple(
+        (
+            "Наличные"
+            if table == "cash_accounts" and kind == "cash"
+            else "Банковские счета"
+            if table == "cash_accounts"
+            else _LABELS[table],
+            len(rows),
+        )
+        for table, rows in selected.items()
+        if rows
+    )
     warnings = []
     if selected["cash_events"]:
         warnings.append("Удаление денежных операций изменит реальные остатки с дат этих операций.")

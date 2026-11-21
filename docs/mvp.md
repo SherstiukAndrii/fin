@@ -133,3 +133,45 @@ full SQLite backup outside the repository, an atomic write transaction and
 foreign-key checks. No hidden cascade from account deletion, no database
 migration, no personal fixture, no automatic import remapping or new cash flow.
 
+## Physical cash is not a bank account
+
+The user-facing **Money** workspace presents bank accounts and cash on hand
+as separate entities, with independent add/edit/delete controls and
+balances. Cash does not have bank details and is not created through the
+bank account form. For backward compatibility, the ledger continues to store
+both as typed balance locations with `AccountKind.BANK` and
+`AccountKind.CASH`; this **internal storage implementation does not mean
+cash is presented as a bank account**. The opening snapshot, dated ledger,
+monthly control and transfers still reference stable IDs and currencies.
+No migration, conversion of existing entries, new flows or invented income.
+Cash deletion uses a distinct UI and signed preview label, with existing
+foreign-key and backup safeguards.
+
+## Bank usability redesign
+
+Bank uses a local, responsive multi-workspace layout instead of scrolling
+through every form and ledger at once. Overview shows dated real and
+potential cash **separately per currency**, with forecast details behind a
+disclosure. Accounts, investments/import, payment calendar, month-end
+reconciliation and money events have dedicated navigation tabs. Unrelated
+sections remain in the DOM for progressive enhancement but are visually
+hidden when JavaScript is available. Deep links to existing section anchors
+continue working.
+
+The as-of date is a viewing filter, separate from the dates used in forms.
+The date panel is stable during AJAX refresh. It provides calendar picking,
+month arrows, Today and previous-month-end shortcuts; the apply button
+does not move. Date navigation never creates transactions or invents
+currency conversion. Successful actions replace the affected data sections
+without replacing the entire page shell, so the date, tab selection and
+scroll position stay stable.
+
+Deleting any supported entity uses the existing backend verification and
+transaction. A native dialog shows the deletion preview in place, without
+scrolling to the top or showing a permanent alert panel in the page layout.
+The dialog is keyboard-accessible and can be dismissed without mutating
+data. The full-page flow remains a no-JavaScript fallback. Local static
+assets must be included in the Python package and permitted by the CSP.
+Regression tests cover the date, tab links, CSS, JavaScript, CSRF preview
+and financial snapshot integrity; JavaScript syntax is checked in CI.
+
