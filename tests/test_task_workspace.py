@@ -252,9 +252,7 @@ def test_setup_uses_real_prerequisites_instead_of_broken_action_buttons(tmp_path
 
         with SQLiteCashRepository(path) as repo:
             repo.add_bank(Bank("demo", "Imaginary Institution"))
-            repo.add_account(
-                CashAccount("bank", "Imaginary Bank", "UAH", AccountKind.BANK, "demo")
-            )
+            repo.add_account(CashAccount("bank", "Imaginary Bank", "UAH", AccountKind.BANK, "demo"))
         with_account = client.get("/bank?area=money&as_of=2028-02-15")
         assert 'data-form-id="form-opening"' in with_account.text
 

@@ -115,9 +115,7 @@ class SQLiteCashRepository(SQLiteBankRepository):
             "SELECT id, bank_id, name FROM securities_accounts WHERE id=?", (account_id,)
         ).fetchone()
         return (
-            SecuritiesAccount(row["id"], row["bank_id"], row["name"])
-            if row is not None
-            else None
+            SecuritiesAccount(row["id"], row["bank_id"], row["name"]) if row is not None else None
         )
 
     def list_securities_accounts(self) -> tuple[SecuritiesAccount, ...]:

@@ -75,6 +75,7 @@ class Bank:
 @dataclass(frozen=True, slots=True)
 class SecuritiesAccount:
     """Custody record inside a bank; never counted as a cash balance."""
+
     id: str
     bank_id: str
     name: str
@@ -257,6 +258,5 @@ def actual_balances(
     return {
         account_id: money
         for account_id, money in result.items()
-        if account_map[account_id].opened_on is None
-        or account_map[account_id].opened_on <= as_of
+        if account_map[account_id].opened_on is None or account_map[account_id].opened_on <= as_of
     }

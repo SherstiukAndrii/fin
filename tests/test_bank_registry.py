@@ -40,7 +40,9 @@ def money(amount: str, currency: str = "UAH") -> Money:
 
 def test_bank_links_are_strictly_https_and_no_password_in_urls():
     valid = Bank(
-        "fictional", "Imaginary Bank", "https://example.org",
+        "fictional",
+        "Imaginary Bank",
+        "https://example.org",
         "https://online.example.org/login",
     )
     assert valid.website_url == "https://example.org"
@@ -62,19 +64,11 @@ def test_many_cash_accounts_same_bank_currency_and_securities_are_distinct(tmp_p
     path = tmp_path / "invented.sqlite3"
     with SQLiteCashRepository(path) as repo:
         repo.add_bank(Bank("fictional", "Imaginary Bank", "https://example.org"))
-        repo.add_account(
-            CashAccount("daily", "Everyday", "UAH", AccountKind.BANK, "fictional")
-        )
-        repo.add_account(
-            CashAccount("savings", "Savings", "UAH", AccountKind.BANK, "fictional")
-        )
-        repo.add_account(
-            CashAccount("dollars", "USD pocket", "USD", AccountKind.BANK, "fictional")
-        )
+        repo.add_account(CashAccount("daily", "Everyday", "UAH", AccountKind.BANK, "fictional"))
+        repo.add_account(CashAccount("savings", "Savings", "UAH", AccountKind.BANK, "fictional"))
+        repo.add_account(CashAccount("dollars", "USD pocket", "USD", AccountKind.BANK, "fictional"))
         repo.add_account(CashAccount("cash", "On hand", "UAH", AccountKind.CASH))
-        repo.add_securities_account(
-            SecuritiesAccount("bonds", "fictional", "OVGZ custody")
-        )
+        repo.add_securities_account(SecuritiesAccount("bonds", "fictional", "OVGZ custody"))
         repo.save_opening_snapshot(
             OpeningSnapshot(
                 date(2028, 1, 1),
@@ -114,26 +108,35 @@ def test_new_accounts_after_opening_are_zero_and_history_is_not_rewritten(tmp_pa
         # Two UAH accounts in the same bank can be added after opening.
         repo.add_account(
             CashAccount(
-                "second", "Second", "UAH", AccountKind.BANK, "demo",
+                "second",
+                "Second",
+                "UAH",
+                AccountKind.BANK,
+                "demo",
                 date(2027, 3, 1),
             )
         )
         repo.add_account(
             CashAccount(
-                "cash", "Pocket", "UAH", AccountKind.CASH,
+                "cash",
+                "Pocket",
+                "UAH",
+                AccountKind.CASH,
                 opened_on=date(2027, 3, 2),
             )
         )
         repo.add_account(
             CashAccount(
-                "foreign", "Foreign", "USD", AccountKind.BANK, "demo",
+                "foreign",
+                "Foreign",
+                "USD",
+                AccountKind.BANK,
+                "demo",
                 date(2027, 4, 1),
             )
         )
         assert repo.balances_on(date(2027, 2, 28)) == {"main": money("1000")}
-        assert repo.balances_on(date(2027, 3, 1)) == {
-            "main": money("1000"), "second": money("0")
-        }
+        assert repo.balances_on(date(2027, 3, 1)) == {"main": money("1000"), "second": money("0")}
         assert "cash" not in repo.balances_on(date(2027, 3, 1))
         assert "foreign" not in repo.balances_on(date(2027, 3, 2))
         with pytest.raises(ValueError, match="activation"):
@@ -141,13 +144,17 @@ def test_new_accounts_after_opening_are_zero_and_history_is_not_rewritten(tmp_pa
         with pytest.raises(ValueError, match="predates"):
             repo.add_cash_event(
                 CashEvent(
-                    "bad", date(2027, 2, 28), CashEventKind.INFLOW,
+                    "bad",
+                    date(2027, 2, 28),
+                    CashEventKind.INFLOW,
                     (CashLeg("second", money("10")),),
                 )
             )
         repo.add_cash_event(
             CashEvent(
-                "transfer", date(2027, 3, 2), CashEventKind.TRANSFER,
+                "transfer",
+                date(2027, 3, 2),
+                CashEventKind.TRANSFER,
                 (CashLeg("main", money("-70")), CashLeg("second", money("70"))),
             )
         )
@@ -156,13 +163,14 @@ def test_new_accounts_after_opening_are_zero_and_history_is_not_rewritten(tmp_pa
         assert amounts["second"] == money("70")
         assert amounts["cash"] == money("0")
         assert sum(v.amount for v in amounts.values()) == Decimal("1000")
-        assert repo.get_opening_snapshot().balances == (
-            OpeningBalance("main", money("1000")),
+        assert repo.get_opening_snapshot().balances == (OpeningBalance("main", money("1000")),
         )
         with pytest.raises(CurrencyMismatchError):
             repo.add_cash_event(
                 CashEvent(
-                    "wrong", date(2027, 4, 2), CashEventKind.TRANSFER,
+                    "wrong",
+                    date(2027, 4, 2),
+                    CashEventKind.TRANSFER,
                     (
                         CashLeg("main", money("-2")),
                         CashLeg("foreign", money("2", "USD")),
@@ -183,21 +191,24 @@ def test_monthly_control_does_not_include_future_accounts(tmp_path):
         )
         repo.add_account(
             CashAccount(
-                "future", "Later", "UAH", AccountKind.CASH,
+                "future",
+                "Later",
+                "UAH",
+                AccountKind.CASH,
                 opened_on=date(2027, 4, 1),
             )
         )
-        january = repo.record_monthly_control(
-            "jan", date(2027, 1, 31), {"old": money("100")}
-        )
+        january = repo.record_monthly_control("jan", date(2027, 1, 31), {"old": money("100")})
         assert len(january.balances) == 1
         with pytest.raises(ValueError, match="active"):
             repo.record_monthly_control(
-                "bad", date(2027, 2, 28),
+                "bad",
+                date(2027, 2, 28),
                 {"old": money("100"), "future": money("0")},
             )
         april = repo.record_monthly_control(
-            "apr", date(2027, 4, 30),
+            "apr",
+            date(2027, 4, 30),
             {"old": money("100"), "future": money("0")},
         )
         assert len(april.balances) == 2
@@ -281,21 +292,36 @@ def test_task_first_web_supports_bank_many_accounts_and_external_links(tmp_path,
                 follow_redirects=False,
             )
 
-        assert submit(
-            "bank", id="demo", name="Imaginary Bank",
-            website_url="https://example.org", cabinet_url="https://login.example.org",
-        ).status_code == 303
-        assert submit(
-            "account", id="ua1", kind="bank", bank_id="demo",
-            name="Primary UAH", currency="UAH",
-        ).status_code == 303
-        assert submit(
-            "account", id="ua2", kind="bank", bank_id="demo",
-            name="Savings UAH", currency="UAH",
-        ).status_code == 303
-        assert submit(
-            "securities_account", id="custody", bank_id="demo", name="OVGZ custody",
-        ).status_code == 303
+        def created(kind, **fields):
+            response = submit(kind, **fields)
+            assert response.status_code == 303
+
+        created(
+            "bank",
+            id="demo",
+            name="Imaginary Bank",
+            website_url="https://example.org",
+            cabinet_url="https://login.example.org",
+        )
+        created(
+            "account",
+            id="ua1",
+            kind="bank",
+            bank_id="demo",
+            name="Primary UAH",
+            currency="UAH",
+        )
+        created(
+            "account",
+            id="ua2",
+            kind="bank",
+            bank_id="demo",
+            name="Savings UAH",
+            currency="UAH",
+        )
+        created(
+            "securities_account", id="custody", bank_id="demo", name="OVGZ custody"
+        )
 
         bank_page = client.get("/bank?area=money&target=bank:demo")
         assert bank_page.status_code == 200
@@ -313,33 +339,44 @@ def test_task_first_web_supports_bank_many_accounts_and_external_links(tmp_path,
         assert 'id="form-securities-account"' in forms.text
         assert 'name="bank_id"' in forms.text
 
-        assert submit(
-            "opening", as_of="2027-01-01", balance_ua1="400", balance_ua2="200"
-        ).status_code == 303
-        assert submit(
-            "account", id="ua3", kind="bank", bank_id="demo",
-            name="Third UAH", currency="UAH", opened_on="2027-02-01",
-        ).status_code == 303
-        assert submit(
-            "cash", id="new_cash", name="Pocket", currency="UAH",
+        created("opening", as_of="2027-01-01", balance_ua1="400", balance_ua2="200")
+        created(
+            "account",
+            id="ua3",
+            kind="bank",
+            bank_id="demo",
+            name="Third UAH",
+            currency="UAH",
+            opened_on="2027-02-01",
+        )
+        created(
+            "cash",
+            id="new_cash",
+            name="Pocket",
+            currency="UAH",
             opened_on="2027-02-05",
-        ).status_code == 303
+        )
         before = client.get("/bank?area=money&as_of=2027-01-15")
         after = client.get("/bank?area=money&target=ua3&as_of=2027-02-01")
         assert "Third UAH" in before.text
         assert "Учёт с 2027-02-01" in after.text
-        assert "начинаются с нуля" in after.text or "с нуля" in after.text
+        assert "с нуля" in after.text
 
         with SQLiteCashRepository(path) as repo:
             assert repo.balances_on(date(2027, 1, 15)) == {
-                "ua1": money("400"), "ua2": money("200")
+                "ua1": money("400"),
+                "ua2": money("200"),
             }
             assert repo.balances_on(date(2027, 2, 1))["ua3"] == money("0")
 
-        assert submit(
-            "edit_bank", id="demo", name="Imaginary Bank",
-            website_url="javascript:alert(1)", cabinet_url="",
-        ).status_code == 422
+        invalid = submit(
+            "edit_bank",
+            id="demo",
+            name="Imaginary Bank",
+            website_url="javascript:alert(1)",
+            cabinet_url="",
+        )
+        assert invalid.status_code == 422
         with SQLiteCashRepository(path) as repo:
             assert repo.get_bank("demo").website_url == "https://example.org"
         preview = client.post(

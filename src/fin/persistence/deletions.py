@@ -109,11 +109,14 @@ def _select(db: sqlite3.Connection, kind: str, identifier: str):
         add("banks", "id=?", (identifier,))
         if not selected["banks"]:
             raise ValueError("Банк не найден")
-        if db.execute(
-            "SELECT 1 FROM cash_accounts WHERE bank_id=? LIMIT 1", (identifier,)
-        ).fetchone() or db.execute(
-            "SELECT 1 FROM securities_accounts WHERE bank_id=? LIMIT 1", (identifier,)
-        ).fetchone():
+        if (
+            db.execute(
+                "SELECT 1 FROM cash_accounts WHERE bank_id=? LIMIT 1", (identifier,)
+            ).fetchone()
+            or db.execute(
+                "SELECT 1 FROM securities_accounts WHERE bank_id=? LIMIT 1", (identifier,)
+            ).fetchone()
+        ):
             raise ValueError("Сначала удали или перенеси счета этого банка")
 
     elif kind == "securities_account":

@@ -165,7 +165,9 @@ def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
     kind = kind.removeprefix("edit_")
     if kind == "bank":
         bank = Bank(
-            _field(form, "id") if editing else (_field(form, "id", optional=True) or _new_id("bank")),
+            _field(form, "id")
+            if editing
+            else (_field(form, "id", optional=True) or _new_id("bank")),
             _field(form, "name"),
             _field(form, "website_url", optional=True) or None,
             _field(form, "cabinet_url", optional=True) or None,
@@ -860,11 +862,7 @@ def create_app(db_path: str | Path) -> FastAPI:
         )
         selected_securities_account = (
             next(
-                (
-                    item
-                    for item in data["securities_accounts"]
-                    if target == f"securities:{item.id}"
-                ),
+                (item for item in data["securities_accounts"] if target == f"securities:{item.id}"),
                 None,
             )
             if area == "money"
