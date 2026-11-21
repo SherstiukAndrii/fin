@@ -266,3 +266,122 @@ def test_setup_uses_real_prerequisites_instead_of_broken_action_buttons(tmp_path
         assert 'data-form-id="form-cash"' not in after.text
         activity = client.get("/bank?area=activity&as_of=2028-02-15")
         assert 'data-form-id="form-event"' in activity.text
+
+
+def test_payment_card_supports_credit_and_receipt_edit_without_legacy_page(browser):
+    client, path = browser
+    csrf = client.app.state.csrf_token
+    saved = client.post(
+        "/bank/receipt",
+        data={
+            "csrf": csrf,
+            "payment_id": "fictional-coupon",
+            "received_on": "2028-03-21",
+            "amount": "35",
+        },
+        follow_redirects=False,
+    )
+    assert saved.status_code == 303
+    with SQLiteCashRepository(path) as repo:
+        receipt = repo.list_receipts("fictional-coupon")[0]
+        assert repo.balances_on(date(2028, 3, 22))["bank"] == amount("850")
+    url = "/bank?area=due&target=fictional-coupon&as_of=2028-03-22"
+    detail = client.get(url)
+    assert detail.status_code == 200
+    assert "не зачислено" in detail.text
+    assert 'data-edit-action="/bank/credit"' in detail.text
+    assert f'data-record-id="{receipt.id}"' in detail.text
+    assert 'data-match-field="receipt_id"' in detail.text
+    assert 'data-edit-action="/bank/edit_receipt"' in detail.text
+    assert 'data-delete-kind="receipt"' in detail.text
+    form_source = client.get("/bank/forms?as_of=2028-03-22").text
+    assert f'name="receipt_id" value="{receipt.id}"' in form_source
+
+    credited = client.post(
+        "/bank/credit",
+        data={
+            "csrf": csrf,
+            "receipt_id": receipt.id,
+            "payment_id": "fictional-coupon",
+            "account_id": "bank",
+        },
+        follow_redirects=False,
+    )
+    assert credited.status_code == 303
+    with SQLiteCashRepository(path) as repo:
+        assert repo.balances_on(date(2028, 3, 22))["bank"] == amount("885")
+        assert len(repo.list_cash_events()) == 2
+    posted_view = client.get(url)
+    assert "зачислено" in posted_view.text
+    assert 'data-edit-action="/bank/credit"' not in posted_view.text
+
+
+def test_control_card_offers_account_specific_safe_confirmation(browser):
+    client, path = browser
+    csrf = client.app.state.csrf_token
+    captured = client.post(
+        "/bank/control?as_of=2028-02-29",
+        data={
+            "csrf": csrf,
+            "as_of": "2028-02-29",
+            "balance_bank": "900",
+            "balance_pocket": "350",
+            "note": "Fictional statement comparison",
+        },
+        follow_redirects=False,
+    )
+    assert captured.status_code == 303
+    with SQLiteCashRepository(path) as repo:
+        control = repo.list_monthly_controls()[0]
+        assert repo.balances_on(date(2028, 2, 29))["bank"] == amount("850")
+    inspected = client.get(
+        f"/bank?area=review&target={control.id}&as_of=2028-02-29"
+    )
+    assert inspected.status_code == 200
+    assert 'data-edit-action="/bank/confirm_control"' in inspected.text
+    assert 'data-match-field="control_id"' in inspected.text
+    assert 'data-match-extra-field="account_id"' in inspected.text
+    assert 'data-match-extra-value="bank"' in inspected.text
+    assert "Разница 50" in inspected.text
+    forms = client.get("/bank/forms?as_of=2028-02-29")
+    assert f'name="control_id" value="{control.id}"' in forms.text
+    assert 'name="account_id" value="bank"' in forms.text
+
+    approved = client.post(
+        "/bank/confirm_control?as_of=2028-02-29",
+        data={
+            "csrf": csrf,
+            "control_id": control.id,
+            "account_id": "bank",
+            "expected_difference": "50",
+            "reason": "Fictional statement discrepancy",
+        },
+        follow_redirects=False,
+    )
+    assert approved.status_code == 303
+    with SQLiteCashRepository(path) as repo:
+        assert repo.balances_on(date(2028, 2, 29))["bank"] == amount("900")
+    verified = client.get(
+        f"/bank?area=review&target={control.id}&as_of=2028-02-29"
+    )
+    assert "Корректировка подтверждена" in verified.text
+
+
+def test_money_workspace_exposes_opening_edit_and_safe_delete(browser):
+    client, _ = browser
+    page = client.get("/bank?area=money&as_of=2028-02-15")
+    assert page.status_code == 200
+    assert 'data-edit-action="/bank/edit_opening"' in page.text
+    assert 'data-delete-kind="opening"' in page.text
+    assert 'href="/bank/forms?' in page.text
+
+
+def test_portfolio_template_covers_individual_imported_statement_deletion():
+    from pathlib import Path
+
+    template = (
+        Path(__file__).parents[1] / "src/fin/web/templates/workspace.html"
+    ).read_text(encoding="utf-8")
+    assert "securities_import" in template
+    assert "entry.source_hash" in template
+    assert "Подтверждённый остаток" in template

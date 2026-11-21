@@ -48,12 +48,15 @@
     return new DOMParser().parseFromString(await response.text(), "text/html");
   }
 
-  function matchingForm(documentRoot, path, id, fieldName = "id") {
+  function matchingForm(documentRoot, path, id, fieldName = "id",
+                        extraField = null, extraValue = null) {
     return [...documentRoot.querySelectorAll("form")].find((form) => {
       if (new URL(form.action, location.origin).pathname !== path) return false;
-      if (!id) return true;
-      const input = [...form.querySelectorAll("input")].find((node) => node.name === fieldName);
-      return input?.value === id;
+      const matches = (name, value) =>
+        [...form.querySelectorAll("input")].some((node) =>
+          node.name === name && node.value === value);
+      return (!id || matches(fieldName, id)) &&
+        (!extraField || matches(extraField, extraValue));
     });
   }
 
@@ -128,7 +131,8 @@
       form = source.getElementById(trigger.dataset.formId)?.querySelector("form");
     } else if (trigger.dataset.editAction) {
       form = matchingForm(source, trigger.dataset.editAction, trigger.dataset.recordId,
-        trigger.dataset.matchField || "id");
+        trigger.dataset.matchField || "id",
+        trigger.dataset.matchExtraField, trigger.dataset.matchExtraValue);
     }
     if (!form) {
       showMessage("Это действие пока недоступно. Открой прежний интерфейс Fin.", true);

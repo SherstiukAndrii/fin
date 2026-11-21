@@ -147,6 +147,9 @@
             {% if accounts %}{{ action('Начальные остатки', 'form-opening', 'accounts', 'subtle') }}{% endif %}
           {% else %}
             <span class="setup-limit">Новые счета после начального снимка пока не поддерживаются</span>
+            <a class="action subtle" href="/bank/forms?as_of={{ as_of.isoformat() }}#accounts"
+               data-edit-action="/bank/edit_opening">Исправить начальные остатки</a>
+            {{ remove('opening', '1', 'accounts') }}
           {% endif %}
         {% elif area == 'assets' %}
           {{ action('+ ОВГЗ', 'form-bond', 'holdings') }}
@@ -261,6 +264,18 @@
                 {{ remove('holding', selected_asset.id, 'holdings') }}
               {% endif %}
             </div>
+            {% if selected_asset.imported %}
+              <h3>Записи из выписок</h3>
+              <p class="detail-footnote">Удаление записи пересчитает подтверждённый остаток. Перед действием будут показаны последствия.</p>
+              {% for entry in imported_entries if entry.isin == selected_asset.name and entry.custodian == selected_asset.custodian %}
+                <div class="record-row">
+                  <div><strong>{{ entry.as_of }}</strong><small>{{ 'Остаток' if entry.kind == 'closing' else 'Движение' }} · {{ entry.quantity|amount }} шт.</small></div>
+                  {{ remove('securities_import', entry.source_hash, 'imported-securities') }}
+                </div>
+              {% else %}
+                <p class="placeholder">Исходные записи для позиции не найдены.</p>
+              {% endfor %}
+            {% endif %}
             {% if related_payments %}<h3>Выплаты по этому вложению</h3>
               {% for payment in related_payments %}
                 <a class="detail-list-row" href="/bank?area=due&target={{ payment.id|urlencode }}&as_of={{ as_of.isoformat() }}">
@@ -286,9 +301,22 @@
             </div>
             <h3>Фактические поступления</h3>
             {% for receipt in selected_payment.receipts %}
-              <div class="detail-list-row">
-                {{ receipt.item.received_on.strftime('%d.%m.%Y') }}
-                <span>{{ receipt.item.amount.amount|amount }} {{ receipt.item.amount.currency }} · {{ 'зачислено' if receipt.posted else 'не зачислено' }}</span>
+              <div class="record-row">
+                <div>
+                  <strong>{{ receipt.item.received_on.strftime('%d.%m.%Y') }}</strong>
+                  <small>{{ receipt.item.amount.amount|amount }} {{ receipt.item.amount.currency }} · {{ 'зачислено' if receipt.posted else 'не зачислено' }}</small>
+                </div>
+                <div class="record-actions">
+                  {% if not receipt.posted and opening %}
+                    <a class="action primary" href="/bank/forms?as_of={{ as_of.isoformat() }}#payments"
+                       data-edit-action="/bank/credit" data-record-id="{{ receipt.item.id }}"
+                       data-match-field="receipt_id">Зачислить</a>
+                  {% endif %}
+                  {% if not receipt.posted %}
+                    {{ edit('Исправить факт', '/bank/edit_receipt', receipt.item.id, 'payments') }}
+                  {% endif %}
+                  {{ remove('receipt', receipt.item.id, 'payments') }}
+                </div>
               </div>
             {% else %}<p class="placeholder">Фактических поступлений нет.</p>{% endfor %}
           {% elif area == 'activity' and selected_event %}
@@ -308,12 +336,27 @@
             <p>{{ selected_control.note or 'Ручной контроль остатков' }}</p>
             <dl class="facts">
             {% for row in selected_control.rows %}
-              <div><dt>{{ row.account.name }}</dt><dd>Факт {{ row.observed.amount|amount }} · учёт {{ row.current_calculated.amount|amount }} {{ row.observed.currency }}</dd></div>
+              <div>
+                <dt>{{ 'Наличные · ' if row.account.kind.value == 'cash' else 'Банк · ' }}{{ row.account.name }}</dt>
+                <dd>
+                  Факт {{ row.observed.amount|amount }} · учёт {{ row.current_calculated.amount|amount }} {{ row.observed.currency }}
+                  {% if row.correction_event_id %}
+                    <span class="inline-status">Корректировка подтверждена</span>
+                  {% elif row.difference.amount == 0 %}
+                    <span class="inline-status">Суммы совпадают</span>
+                  {% else %}
+                    <span class="inline-status">Разница {{ row.difference.amount|amount }} {{ row.account.currency }}</span>
+                    <a class="action subtle" href="/bank/forms?as_of={{ as_of.isoformat() }}#monthly-controls"
+                       data-edit-action="/bank/confirm_control" data-record-id="{{ selected_control.id }}"
+                       data-match-field="control_id" data-match-extra-field="account_id"
+                       data-match-extra-value="{{ row.account.id }}">Подтвердить корректировку</a>
+                  {% endif %}
+                </dd>
+              </div>
             {% endfor %}
             </dl>
             <div class="inspector-actions">
               {{ remove('control', selected_control.id, 'monthly-controls') }}
-              <a href="/bank/forms?as_of={{ as_of.isoformat() }}#monthly-controls" class="action subtle">Посмотреть формы корректировки</a>
             </div>
           {% else %}
             <div class="welcome-inspector">

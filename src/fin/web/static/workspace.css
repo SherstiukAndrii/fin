@@ -228,3 +228,17 @@ dd { margin:0;font-weight:650;overflow-wrap:anywhere; }
 .setup-limit { color:#7c6b4e;background:#fff8ed;border:1px solid #e9d7b8;
   padding:7px 11px;border-radius:7px;font-size:12px; }
 @media(max-width:760px) { .setup-hint { flex-direction:column;align-items:flex-start; } }
+
+/* Per-record actions replace the old full-page receipt/correction controls. */
+.record-row { display:flex;justify-content:space-between;align-items:center;gap:14px;
+  border-bottom:1px solid var(--line);padding:12px 0;min-width:0; }
+.record-row > div:first-child { display:flex;flex-direction:column;gap:3px;min-width:0; }
+.record-row strong { font-size:12px;overflow-wrap:anywhere; }
+.record-row small { color:var(--quiet);font-size:11px;overflow-wrap:anywhere; }
+.record-actions { display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:6px; }
+.inline-status { display:block;font-size:11px;color:#547080;font-weight:500;margin:5px 0; }
+.facts .action { margin:6px 0; }
+@media(max-width:760px) {
+  .record-row { align-items:flex-start;flex-direction:column; }
+  .record-actions { justify-content:flex-start; }
+}
