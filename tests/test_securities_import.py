@@ -318,7 +318,7 @@ def test_browser_preview_confirmation_and_dedup(monkeypatch, browser):
     )
     assert result.status_code == 303
     assert "imported=1" in result.headers["location"]
-    position_page = client.get("/bank?as_of=2028-02-29")
+    position_page = client.get("/bank/forms?as_of=2028-02-29")
     assert "Example Custodian" in position_page.text
     assert "Подтверждённый остаток" in position_page.text
     with SQLiteCashRepository(db_path) as repo:
@@ -358,7 +358,7 @@ def _manual_lot(lot_id: str, *, quantity: int, custodian: str) -> BondLot:
 
 
 def _investments_html(client, day: str = "2028-02-29") -> str:
-    response = client.get(f"/bank?as_of={day}")
+    response = client.get(f"/bank/forms?as_of={day}")
     assert response.status_code == 200
     return response.text.split('<section class="card" id="holdings">', 1)[1].split("</section>", 1)[
         0
@@ -411,7 +411,7 @@ def test_existing_bond_lots_are_not_double_counted_and_remain_editable(browser):
     assert 'action="/bank/edit_bond"' in holdings
     # Contractual payouts from manually defined lots remain available.
     assert "coupon-example" not in main_table
-    response = client.get("/bank?as_of=2028-06-01")
+    response = client.get("/bank/forms?as_of=2028-06-01")
     assert "10 UAH" in response.text
     with SQLiteCashRepository(path) as repo:
         assert len(repo.list_bond_lots()) == 2

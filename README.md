@@ -300,8 +300,8 @@ them after a separate SQLite backup outside the repository. Reimporting the same
 PDF or the same recognized source event is idempotent. A closing-balance report
 is authoritative for its custodian/ISIN/date; post-snapshot movements alone may
 change it. Movement-only reports show an *unconfirmed net change*, not a
-verified portfolio balance. **Imported positions appear directly in the
-Bank Investments ("Вложения") table**. A confirmed statement for the same
+verified portfolio balance. **Imported positions appear in the
+Portfolio ("Портфель") object list**. A confirmed statement for the same
 ISIN and exact custodian replaces the corresponding manual lot rows in the
 main display; manual contract lots remain available in a separate expandable
 editor for cost, maturity and payout terms. Movement-only reports never
@@ -343,3 +343,65 @@ bond contracts or create financial transactions. The procedure does not
 implement an undo button: restore a private backup if the deletion was a
 mistake. Use the delete preview to inspect every affected record count first.
 
+## Bank balances: accounts vs physical cash
+
+The Bank **Money** workspace displays **bank accounts** and **physical cash on
+hand** as separate kinds of holdings. Cash is not a bank account: creation,
+editing, balances and deletion are clearly distinguished in the UI. To preserve
+existing balances, transaction history and stable SQLite v5 migrations,
+both remain typed money locations within the **internal** existing ledger:
+`AccountKind.BANK` and `AccountKind.CASH`. Physical cash has no bank or
+account number, defaults to the label "На руках", and is not offered in
+bank-account creation. Existing cash records are shown under the cash section
+without changing their identifiers or recorded amounts.
+
+The opening snapshot and monthly reconciliations cover **both** banks and
+cash. Transfers between cash and bank locations change each balance once,
+with no net creation of money. Real cash includes both kinds, while planned
+payouts and imported securities do not book cash. To avoid accidental removal
+of cash under the bank-account deletion label, cash deletion has its own
+signed preview type and uses the same backup and dependency checks.
+No migration or data rewrite is performed.
+
+## Local favicon
+
+Fin ships a small transparent PNG favicon derived from the generated duck-sailor mascot, cropped for recognizability at 32 × 32 pixels. The icon loads locally from `/assets/favicon-32.png`, is included in the Python package and requires no external web service. The icon is illustrative and not intended as an official Disney/Donald Duck asset. This change is a separate, descriptive follow-up commit in PR #17, preserving prior review history.
+
+## Fin interface: task-first workspace (PR #17)
+
+The **only user-facing UI** is `http://127.0.0.1:8765/bank`.
+The root route redirects there. The earlier six large Bank tabs, their CSS
+and JavaScript, and the standalone experiment at `/workspace` are replaced by
+the task-first design (the latter URL remains a compatibility alias).
+
+- **Home:** real cash per currency, expected but not yet received payments, and
+  short action starters. No full-page financial editing forms.
+- **Money, Portfolio, Payouts, History, Reconciliation:** searchable lists of
+  actual objects. Select one to inspect its values and relevant actions.
+  Bank accounts and cash on hand remain distinct entities. Balances on a
+  chosen date are independent from actual transaction posting dates.
+- **Action dialogs:** create an investment, record a cash movement, edit a
+  selected item, record a receipt, or preview deletion without leaving the
+  object inspector. Feedback does not move the date toolbar.
+- **Opening setup:** when no opening snapshot exists, the UI leads through
+  setting up bank accounts/cash and opening balances. After opening, adding
+  an account is blocked by existing domain rules and the UI explains why.
+- **Securities PDF import:** explicit preview and confirmation; no raw PDF
+  or personal data are stored in Git.
+
+The existing CSRF-protected and transactional `/bank/*` handlers are unchanged,
+as are the signed deletion preview, typed confirmation, private backup,
+foreign-key checks and `Decimal` cash calculations. The reusable form markup
+is served **internally** from `/bank/forms`, not as a second dashboard.
+This keeps validated server forms while removing the old Bank UI.
+Neither `bank.css` nor `bank.js` is shipped or loaded.
+
+The current design is offline-first: `workspace.css`, `workspace.js` and
+the favicon are bundled, with no CDN, tracking, external fonts, or API calls.
+Without JavaScript the main workspace remains read-only; the internal
+forms endpoint provides a basic fallback for manual operations. No
+database migrations or automatic cash postings are introduced.
+
+When changing UX, update HTML, JS and synthetic browser-facing tests while
+preserving historical transaction and payout regression tests. Manual visual
+and keyboard review is still needed in the owner's browser.

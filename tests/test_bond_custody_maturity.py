@@ -236,12 +236,12 @@ def test_web_custodian_and_actual_overpayment_display(tmp_path) -> None:
             "unit_price": "",
             "paid_fees": "",
         }
-        page = client.get("/bank")
+        page = client.get("/bank/forms")
         assert '<select name="custodian" required>' in page.text
         assert '<option value="mono"' in page.text
         response = client.post("/bank/bond", data=form, follow_redirects=False)
         assert response.status_code == 303
-        page = client.get("/bank")
+        page = client.get("/bank/forms")
         assert "mono" in page.text
         assert "200 000" in page.text
         assert "Авто: дата и тело вложения" in page.text
@@ -260,6 +260,6 @@ def test_web_custodian_and_actual_overpayment_display(tmp_path) -> None:
             follow_redirects=False,
         )
         assert cash.status_code == 303
-        page = client.get("/bank?as_of=2028-11-21").text
+        page = client.get("/bank/forms?as_of=2028-11-21").text
         assert "Сверх плана" in page
         assert "+50" in page

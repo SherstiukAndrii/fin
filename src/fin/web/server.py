@@ -44,6 +44,7 @@ from fin.web.import_preview import sign_preview, verify_preview
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 _KINDS = {
     "account",
+    "cash",
     "opening",
     "event",
     "bond",
@@ -156,14 +157,19 @@ def _scheduled_from_form(
 def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
     editing = kind.startswith("edit_")
     kind = kind.removeprefix("edit_")
-    if kind == "account":
+    if kind in {"account", "cash"}:
         account = CashAccount(
             _field(form, "id")
             if editing
-            else (_field(form, "id", optional=True) or _new_id("account")),
-            _field(form, "name"),
+            else (
+                _field(form, "id", optional=True)
+                or _new_id("cash" if kind == "cash" else "account")
+            ),
+            _field(form, "name", optional=True) or "На руках"
+            if kind == "cash"
+            else _field(form, "name"),
             _field(form, "currency").upper(),
-            AccountKind(_field(form, "kind")),
+            AccountKind.CASH if kind == "cash" else AccountKind(_field(form, "kind")),
         )
         if editing:
             repo.update_account(account)
@@ -415,6 +421,16 @@ def _backup_before_edit(path: Path) -> None:
 
 def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
     accounts = repo.list_accounts()
+    bank_accounts = tuple(account for account in accounts if account.kind == AccountKind.BANK)
+    cash_locations = tuple(account for account in accounts if account.kind == AccountKind.CASH)
+    account_labels = {
+        account.id: (
+            f"Наличные · {account.name} ({account.currency})"
+            if account.kind == AccountKind.CASH
+            else f"{account.name} ({account.currency})"
+        )
+        for account in accounts
+    }
     opening = repo.get_opening_snapshot()
     bank_names = tuple(
         sorted(
@@ -600,6 +616,9 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
     events = repo.list_cash_events()
     return {
         "accounts": accounts,
+        "bank_accounts": bank_accounts,
+        "cash_locations": cash_locations,
+        "account_labels": account_labels,
         "opening": opening,
         "bank_names": bank_names,
         "custodian_names": custodian_names,
@@ -642,7 +661,7 @@ def create_app(db_path: str | Path) -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'self'; "
+            "default-src 'none'; img-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; "
             "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
         )
         return response
@@ -669,6 +688,9 @@ def create_app(db_path: str | Path) -> FastAPI:
         if not db_path.is_file():
             data = {
                 "accounts": (),
+                "bank_accounts": (),
+                "cash_locations": (),
+                "account_labels": {},
                 "opening": None,
                 "bank_names": (),
                 "custodian_names": (),
@@ -694,7 +716,7 @@ def create_app(db_path: str | Path) -> FastAPI:
             missing = False
         return _TEMPLATES.TemplateResponse(
             request=request,
-            name="bank.html",
+            name="bank_forms.html",
             context={
                 **data,
                 "csrf": token,
@@ -712,13 +734,134 @@ def create_app(db_path: str | Path) -> FastAPI:
             status_code=status_code,
         )
 
-    @app.get("/bank", response_class=HTMLResponse)
-    def bank(request: Request, as_of: str | None = None):
+    @app.get("/bank/forms", response_class=HTMLResponse, include_in_schema=False)
+    def internal_form_source(request: Request, as_of: str | None = None):
+        """Existing audited form and preview markup; not a user-facing dashboard."""
         try:
             selected = date.fromisoformat(as_of) if as_of else date.today()
         except ValueError:
             return HTMLResponse("Invalid evaluation date", status_code=422)
         return render_bank(request, selected)
+
+    @app.get("/bank", response_class=HTMLResponse)
+    @app.get("/workspace", response_class=HTMLResponse, include_in_schema=False)
+    def task_workspace(
+        request: Request,
+        area: str = "home",
+        target: str | None = None,
+        as_of: str | None = None,
+    ):
+        """The task-first UI is the single primary Fin interface."""
+        if area not in {"home", "money", "assets", "due", "activity", "review"}:
+            return HTMLResponse("Unknown workspace", status_code=404)
+        try:
+            selected = date.fromisoformat(as_of) if as_of else date.today()
+        except ValueError:
+            return HTMLResponse("Invalid evaluation date", status_code=422)
+        missing = not db_path.is_file()
+        if missing:
+            data = {
+                "accounts": (),
+                "bank_accounts": (),
+                "cash_locations": (),
+                "account_labels": {},
+                "balances": {},
+                "outlook": None,
+                "investment_rows": (),
+                "payments": (),
+                "events": (),
+                "controls": (),
+                "opening": None,
+                "warning": None,
+            }
+        else:
+            with SQLiteCashRepository(db_path) as repo:
+                data = _read_view(repo, selected)
+
+        selected_account = (
+            next(
+                (account for account in data["accounts"] if account.id == target),
+                None,
+            )
+            if area == "money"
+            else None
+        )
+        selected_asset = None
+        if area == "assets" and target is not None:
+            try:
+                position = int(target)
+                if 0 <= position < len(data["investment_rows"]):
+                    selected_asset = data["investment_rows"][position]
+            except (ValueError, TypeError):
+                pass
+        selected_payment = (
+            next(
+                (payment for payment in data["payments"] if payment["id"] == target),
+                None,
+            )
+            if area == "due"
+            else None
+        )
+        selected_event = (
+            next(
+                (event for event in data["events"] if event.id == target),
+                None,
+            )
+            if area == "activity"
+            else None
+        )
+        selected_control = (
+            next(
+                (control for control in data["controls"] if control["id"] == target),
+                None,
+            )
+            if area == "review"
+            else None
+        )
+        related_events = (
+            tuple(
+                event
+                for event in data["events"]
+                if any(leg.account_id == selected_account.id for leg in event.legs)
+            )[:8]
+            if selected_account
+            else ()
+        )
+        related_payments = (
+            tuple(
+                payment
+                for payment in data["payments"]
+                if payment["holding"] == selected_asset.get("id")
+            )
+            if selected_asset and selected_asset.get("id")
+            else ()
+        )
+        outstanding = tuple(
+            payment for payment in data["payments"] if payment["outstanding"].amount > 0
+        )
+        overdue_count = sum(payment["due"] < selected for payment in outstanding)
+        return _TEMPLATES.TemplateResponse(
+            request=request,
+            name="workspace.html",
+            context={
+                **data,
+                "area": area,
+                "target": target,
+                "selected_account": selected_account,
+                "selected_asset": selected_asset,
+                "selected_payment": selected_payment,
+                "selected_event": selected_event,
+                "selected_control": selected_control,
+                "related_events": related_events,
+                "related_payments": related_payments,
+                "outstanding": outstanding,
+                "overdue_count": overdue_count,
+                "as_of": selected,
+                "today": date.today(),
+                "csrf": token,
+                "missing_db": missing,
+            },
+        )
 
     @app.post("/bank/delete/preview", response_class=HTMLResponse)
     async def preview_delete(request: Request):
@@ -775,6 +918,7 @@ def create_app(db_path: str | Path) -> FastAPI:
                 repo.delete_with_plan(kind, identifier, digest)
             anchors = {
                 "account": "accounts",
+                "cash": "accounts",
                 "opening": "accounts",
                 "cash_event": "events",
                 "control": "monthly-controls",

@@ -133,3 +133,53 @@ full SQLite backup outside the repository, an atomic write transaction and
 foreign-key checks. No hidden cascade from account deletion, no database
 migration, no personal fixture, no automatic import remapping or new cash flow.
 
+## Physical cash is not a bank account
+
+The user-facing **Money** workspace presents bank accounts and cash on hand
+as separate entities, with independent add/edit/delete controls and
+balances. Cash does not have bank details and is not created through the
+bank account form. For backward compatibility, the ledger continues to store
+both as typed balance locations with `AccountKind.BANK` and
+`AccountKind.CASH`; this **internal storage implementation does not mean
+cash is presented as a bank account**. The opening snapshot, dated ledger,
+monthly control and transfers still reference stable IDs and currencies.
+No migration, conversion of existing entries, new flows or invented income.
+Cash deletion uses a distinct UI and signed preview label, with existing
+foreign-key and backup safeguards.
+
+## Single task-first Bank UI (PR #17)
+
+The chosen design is **C** (previously evaluated in draft PR #20).
+It replaces the tabbed, large-page Bank styling outright. Route `/bank`
+displays only the new task-first, object-focused interface; `/workspace`
+is a compatibility alias to the same UI, **not a second design**.
+The older `bank.css` and `bank.js` are removed.
+
+Use a short overview for as-of real vs potential cash by currency, a small
+set of common tasks and outstanding payouts. The other work areas
+(Money, Portfolio, Payouts, History, Reconciliation) display a searchable
+object list and one selected-object inspector. Avoid unrelated forms in the
+DOM of the main page. Use local native-dialog workflows with preserved focus
+for edit/create/deletion actions, and keep a stable date picker.
+
+Account creation is offered only before an opening snapshot; actual
+transactions and monthly controls require an existing snapshot. Missing
+capabilities must not be presented as active buttons. Cash stays distinct
+from bank accounts; a bank↔cash transfer is not income. Payout plans do
+not post money, principal redemption is not income, imports never double
+count the same holding, and currencies are never combined without FX.
+
+The existing internal form library (`/bank/forms`, `bank_forms.html`)
+is a **private implementation route**, not a public-facing alternative UI.
+This route produces validated forms, error details, and signed deletion
+previews for client-side dialogs; form POSTs continue through the existing
+CSRF-protected audited `/bank/*` endpoints. Do not remove it until native
+form fragments cover every action and are regression-tested. Deletion
+still needs a review of dependencies, a signed confirmation, explicit
+typed approval, private SQLite backup, and atomic foreign-key-safe writes.
+No migration, financial record rewrite, or personal financial data in Git.
+
+All UI resources must ship locally and pass Node syntax and Python
+integration tests on 3.12/3.13/3.14, Ruff checks, and a browser usability
+review. The previous CSS-only UX branches #18/#19 and prototype branch
+#20 are not part of the final UI. They remain unmerged alternatives.
