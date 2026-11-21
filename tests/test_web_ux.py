@@ -199,3 +199,15 @@ def test_empty_accounts_expose_a_clear_creation_action(tmp_path):
     assert 'id="form-account"' in html
     assert '<summary class="entrypoint">+ Добавить банковский счёт</summary>' in html
     assert "Несколько счетов одного банка" in html
+
+
+def test_sidebar_experiment_is_bundled_without_external_assets(browser):
+    client, _ = browser
+    page = client.get("/bank")
+    css = client.get("/assets/bank.css")
+    assert page.status_code == 200
+    assert css.status_code == 200
+    assert "UX experiment A: persistent left navigation" in css.text
+    assert "grid-template-columns:215px minmax(0,1fr)" in css.text
+    assert "position:sticky" in css.text
+    assert "@media(max-width:900px)" in css.text

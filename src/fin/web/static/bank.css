@@ -253,3 +253,34 @@ footer { padding: 20px 0 0; margin: 16px 0 0; border-top: 1px solid #dde6f0; }
 @media(prefers-reduced-motion:reduce) {
   *,*::before,*::after { transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+
+/* UX experiment A: persistent left navigation and task-focused workspace. */
+:root { --canvas:#f5f6f8; --surface:#fff; --ink:#1b2838; --muted:#667589; --line:#e1e6ec; --accent:#245b80; --accent-soft:#e8f1f5; }
+.app-header { min-height:54px; padding-block:10px; background:#20374b; }
+.brand strong { font-size:25px; }
+main#bank-main { max-width:1450px; display:grid; grid-template-columns:215px minmax(0,1fr); align-items:start; column-gap:23px; padding-top:17px; }
+.context-bar { grid-column:1 / -1; grid-row:1; grid-template-columns:minmax(0,1fr) minmax(300px,445px); gap:18px; margin-bottom:15px; }
+.context-title h1 { font-size:26px; }
+.context-title p { display:none; }
+.period-filter { min-height:0; padding:11px 14px; box-shadow:none; }
+.period-hint { display:none; }
+.period-controls { margin-top:6px; }
+.workspace-nav { grid-column:1; grid-row:2 / span 11; position:sticky; top:15px; display:flex; flex-direction:column; align-items:stretch; gap:3px; min-height:0; padding:9px; margin:0; overflow:visible; box-shadow:none; }
+.workspace-nav a { justify-content:flex-start; flex:0 0 auto; min-height:42px; padding:10px 13px; font-size:14px; border-radius:8px; }
+.workspace-nav a[aria-current="page"] { border-color:transparent; border-left:3px solid var(--accent); padding-left:10px; }
+.workspace-note, #page-messages, main#bank-main > .card, main#bank-main > .banner, main#bank-main > footer, main#bank-main > #confirm-deletion { grid-column:2; min-width:0; }
+.workspace-note { padding:6px 1px 10px; margin:0; }
+.card { padding:20px 23px; border-radius:10px; box-shadow:none; margin-bottom:12px; }
+.section-heading { margin-bottom:12px; }
+.money-group { background:#fff; border-radius:9px; }
+.metric-grid { grid-template-columns:repeat(auto-fit,minmax(205px,1fr)); }
+.metric-card { background:#f8fafc; border-radius:9px; padding:14px 16px; }
+th,td { padding:10px 12px; }
+@media(max-width:900px) {
+  main#bank-main { display:flex; flex-direction:column; padding:14px; }
+  .context-bar { display:grid; grid-template-columns:1fr; width:100%; }
+  .workspace-nav { position:static; flex-direction:row; align-items:center; overflow-x:auto; width:100%; margin-bottom:12px; }
+  .workspace-nav a { white-space:nowrap; }
+  .workspace-note, #page-messages, main#bank-main > .card, main#bank-main > .banner, main#bank-main > footer { width:100%; }
+}
