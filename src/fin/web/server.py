@@ -189,9 +189,7 @@ def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
         else:
             repo.add_securities_account(account)
     elif kind in {"account", "cash"}:
-        account_kind = (
-            AccountKind.CASH if kind == "cash" else AccountKind(_field(form, "kind"))
-        )
+        account_kind = AccountKind.CASH if kind == "cash" else AccountKind(_field(form, "kind"))
         if kind == "cash" and _field(form, "kind", optional=True) not in {"", "cash"}:
             raise ValueError("Наличные добавляются отдельно от банковских счетов")
         if kind == "account" and not editing and account_kind != AccountKind.BANK:
