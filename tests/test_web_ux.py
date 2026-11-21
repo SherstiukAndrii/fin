@@ -75,9 +75,7 @@ def test_date_only_changes_read_model_not_original_history(browser):
     assert "200" in before.text
     assert "225" in after.text
     with SQLiteCashRepository(db_path) as repo:
-        assert repo.balances_on(date(2028, 3, 1))["wallet"] == Money(
-            Decimal("225"), "UAH"
-        )
+        assert repo.balances_on(date(2028, 3, 1))["wallet"] == Money(Decimal("225"), "UAH")
         assert len(repo.list_cash_events()) == 1
 
 
