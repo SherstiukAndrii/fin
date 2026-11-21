@@ -334,9 +334,7 @@ def test_control_card_offers_account_specific_safe_confirmation(browser):
     with SQLiteCashRepository(path) as repo:
         control = repo.list_monthly_controls()[0]
         assert repo.balances_on(date(2028, 2, 29))["bank"] == amount("850")
-    inspected = client.get(
-        f"/bank?area=review&target={control.id}&as_of=2028-02-29"
-    )
+    inspected = client.get(f"/bank?area=review&target={control.id}&as_of=2028-02-29")
     assert inspected.status_code == 200
     assert 'data-edit-action="/bank/confirm_control"' in inspected.text
     assert 'data-match-field="control_id"' in inspected.text
@@ -361,9 +359,7 @@ def test_control_card_offers_account_specific_safe_confirmation(browser):
     assert approved.status_code == 303
     with SQLiteCashRepository(path) as repo:
         assert repo.balances_on(date(2028, 2, 29))["bank"] == amount("900")
-    verified = client.get(
-        f"/bank?area=review&target={control.id}&as_of=2028-02-29"
-    )
+    verified = client.get(f"/bank?area=review&target={control.id}&as_of=2028-02-29")
     assert "Корректировка подтверждена" in verified.text
 
 
@@ -379,9 +375,9 @@ def test_money_workspace_exposes_opening_edit_and_safe_delete(browser):
 def test_portfolio_template_covers_individual_imported_statement_deletion():
     from pathlib import Path
 
-    template = (
-        Path(__file__).parents[1] / "src/fin/web/templates/workspace.html"
-    ).read_text(encoding="utf-8")
+    template = (Path(__file__).parents[1] / "src/fin/web/templates/workspace.html").read_text(
+        encoding="utf-8"
+    )
     assert "securities_import" in template
     assert "entry.source_hash" in template
     assert "Подтверждённый остаток" in template
