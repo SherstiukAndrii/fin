@@ -35,6 +35,7 @@ def post(client, route, **values):
 def assert_saved(client, route, **values):
     assert post(client, route, **values).status_code == 303
 
+
 def test_cash_without_any_bank_uses_its_own_form_and_stays_unlinked(browser):
     client, path = browser
     workspace = client.get("/bank?area=money")
