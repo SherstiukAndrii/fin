@@ -81,7 +81,7 @@ def test_migration_of_v1_keeps_existing_bank_records(tmp_path) -> None:
                VALUES ('lot1', 'UA1234567890', '2027-01-01', 2, '970.125', '0.00')"""
         )
     with SQLiteCashRepository(path) as store:
-        assert store.schema_version() == SCHEMA_VERSION == 5
+        assert store.schema_version() == SCHEMA_VERSION == 6
         assert store.get_bond_lot("lot1").cost_basis == money("1940.250")
         store.add_account(account())
         store.save_opening_snapshot(opening())
@@ -90,12 +90,12 @@ def test_migration_of_v1_keeps_existing_bank_records(tmp_path) -> None:
         assert store.get_opening_snapshot() == opening()
 
 
-def test_empty_database_starts_at_v5_and_reopens_idempotently(tmp_path) -> None:
+def test_empty_database_starts_at_v6_and_reopens_idempotently(tmp_path) -> None:
     path = tmp_path / "fin.db"
     with SQLiteCashRepository(path) as store:
-        assert store.schema_version() == 5
+        assert store.schema_version() == 6
     with SQLiteCashRepository(path) as store:
-        assert store.schema_version() == 5
+        assert store.schema_version() == 6
         assert store.list_accounts() == ()
         assert store.list_cash_events() == ()
 

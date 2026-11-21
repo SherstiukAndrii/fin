@@ -162,5 +162,6 @@ def test_empty_ledger_opens_setup_instead_of_unavailable_operation(tmp_path):
         money = client.get("/bank?area=money")
     assert "Начни с начальных остатков" in main.text
     assert 'data-form-id="form-event"' not in main.text
-    assert 'data-form-id="form-account"' in money.text
+    assert 'data-form-id="form-bank"' in money.text
+    assert 'data-form-id="form-account"' not in money.text
     assert 'data-form-id="form-cash"' in money.text

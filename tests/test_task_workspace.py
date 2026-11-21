@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from fin.domain.accounts import (
     AccountKind,
+    Bank,
     CashAccount,
     CashEvent,
     CashEventKind,
@@ -104,8 +105,9 @@ def test_money_master_detail_separates_bank_and_cash(browser):
     assert "Выбери запись слева" in page.text
     assert 'id="object-search"' in page.text
     assert 'data-form-id="form-account"' not in page.text
-    assert 'data-form-id="form-cash"' not in page.text
-    assert "Новые счета после начального снимка пока не поддерживаются" in page.text
+    assert 'data-form-id="form-cash"' in page.text
+    assert 'data-form-id="form-bank"' in page.text
+    assert 'data-form-id="form-account"' not in page.text
     assert '<details id="form-account"' not in page.text
 
     detail = client.get("/bank?area=money&target=bank&as_of=2028-02-15")
@@ -244,12 +246,14 @@ def test_setup_uses_real_prerequisites_instead_of_broken_action_buttons(tmp_path
         assert "Настроить деньги" in home.text
 
         before = client.get("/bank?area=money&as_of=2028-02-15")
-        assert 'data-form-id="form-account"' in before.text
+        assert 'data-form-id="form-bank"' in before.text
+        assert 'data-form-id="form-account"' not in before.text
         assert 'data-form-id="form-cash"' in before.text
         assert 'data-form-id="form-opening"' not in before.text
 
         with SQLiteCashRepository(path) as repo:
-            repo.add_account(CashAccount("bank", "Imaginary Bank", "UAH", AccountKind.BANK))
+            repo.add_bank(Bank("demo", "Imaginary Institution"))
+            repo.add_account(CashAccount("bank", "Imaginary Bank", "UAH", AccountKind.BANK, "demo"))
         with_account = client.get("/bank?area=money&as_of=2028-02-15")
         assert 'data-form-id="form-opening"' in with_account.text
 
@@ -261,9 +265,9 @@ def test_setup_uses_real_prerequisites_instead_of_broken_action_buttons(tmp_path
                 )
             )
         after = client.get("/bank?area=money&as_of=2028-02-15")
-        assert "Новые счета после начального снимка пока не поддерживаются" in after.text
-        assert 'data-form-id="form-account"' not in after.text
-        assert 'data-form-id="form-cash"' not in after.text
+        assert 'data-form-id="form-account"' in after.text
+        assert 'data-form-id="form-cash"' in after.text
+        assert 'data-form-id="form-securities-account"' in after.text
         activity = client.get("/bank?area=activity&as_of=2028-02-15")
         assert 'data-form-id="form-event"' in activity.text
 

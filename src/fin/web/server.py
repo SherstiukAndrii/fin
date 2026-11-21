@@ -18,12 +18,14 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from fin.domain.accounts import (
     AccountKind,
+    Bank,
     CashAccount,
     CashEvent,
     CashEventKind,
     CashLeg,
     OpeningBalance,
     OpeningSnapshot,
+    SecuritiesAccount,
 )
 from fin.domain.bank import (
     ActualReceipt,
@@ -43,6 +45,10 @@ from fin.web.import_preview import sign_preview, verify_preview
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 _KINDS = {
+    "bank",
+    "edit_bank",
+    "securities_account",
+    "edit_securities_account",
     "account",
     "cash",
     "opening",
@@ -157,7 +163,37 @@ def _scheduled_from_form(
 def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
     editing = kind.startswith("edit_")
     kind = kind.removeprefix("edit_")
-    if kind in {"account", "cash"}:
+    if kind == "bank":
+        bank = Bank(
+            _field(form, "id")
+            if editing
+            else (_field(form, "id", optional=True) or _new_id("bank")),
+            _field(form, "name"),
+            _field(form, "website_url", optional=True) or None,
+            _field(form, "cabinet_url", optional=True) or None,
+        )
+        if editing:
+            repo.update_bank(bank)
+        else:
+            repo.add_bank(bank)
+    elif kind == "securities_account":
+        account = SecuritiesAccount(
+            _field(form, "id")
+            if editing
+            else (_field(form, "id", optional=True) or _new_id("securities")),
+            _field(form, "bank_id"),
+            _field(form, "name"),
+        )
+        if editing:
+            repo.update_securities_account(account)
+        else:
+            repo.add_securities_account(account)
+    elif kind in {"account", "cash"}:
+        account_kind = AccountKind.CASH if kind == "cash" else AccountKind(_field(form, "kind"))
+        if kind == "cash" and _field(form, "kind", optional=True) not in {"", "cash"}:
+            raise ValueError("Наличные добавляются отдельно от банковских счетов")
+        if account_kind == AccountKind.CASH and _field(form, "bank_id", optional=True):
+            raise ValueError("Наличные не принадлежат банку")
         account = CashAccount(
             _field(form, "id")
             if editing
@@ -169,14 +205,35 @@ def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
             if kind == "cash"
             else _field(form, "name"),
             _field(form, "currency").upper(),
-            AccountKind.CASH if kind == "cash" else AccountKind(_field(form, "kind")),
+            account_kind,
+            (
+                _field(form, "bank_id", optional=True) or None
+                if account_kind == AccountKind.BANK
+                else None
+            ),
+            (
+                date.fromisoformat(_field(form, "opened_on"))
+                if _field(form, "opened_on", optional=True)
+                else None
+            )
+            if not editing
+            else None,
         )
         if editing:
             repo.update_account(account)
         else:
             repo.add_account(account)
     elif kind == "opening":
-        accounts = repo.list_accounts()
+        opening_existing = repo.get_opening_snapshot() if editing else None
+        accounts = (
+            tuple(
+                account
+                for account in repo.list_accounts()
+                if any(row.account_id == account.id for row in opening_existing.balances)
+            )
+            if opening_existing is not None
+            else repo.list_accounts()
+        )
         if not accounts:
             raise ValueError("Create an account first")
         snapshot = OpeningSnapshot(
@@ -316,13 +373,16 @@ def _submit(repo: SQLiteCashRepository, kind: str, form) -> None:
         else:
             repo.add_payment(payment)
     elif kind == "control":
+        control_date = _date(form, "as_of")
+        active_ids = repo.balances_on(control_date)
         observed = {
             account.id: Money(_decimal(form, f"balance_{account.id}"), account.currency)
             for account in repo.list_accounts()
+            if account.id in active_ids
         }
         repo.record_monthly_control(
             _new_id("control"),
-            _date(form, "as_of"),
+            control_date,
             observed,
             note=_field(form, "note", optional=True) or None,
         )
@@ -421,12 +481,17 @@ def _backup_before_edit(path: Path) -> None:
 
 def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
     accounts = repo.list_accounts()
+    banks = repo.list_banks()
+    securities_accounts = repo.list_securities_accounts()
+    banks_by_id = {bank.id: bank for bank in banks}
     bank_accounts = tuple(account for account in accounts if account.kind == AccountKind.BANK)
     cash_locations = tuple(account for account in accounts if account.kind == AccountKind.CASH)
     account_labels = {
         account.id: (
             f"Наличные · {account.name} ({account.currency})"
             if account.kind == AccountKind.CASH
+            else f"{banks_by_id[account.bank_id].name} · {account.name} ({account.currency})"
+            if account.bank_id in banks_by_id
             else f"{account.name} ({account.currency})"
         )
         for account in accounts
@@ -436,6 +501,7 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
         sorted(
             {
                 *(account.name for account in accounts if account.kind == AccountKind.BANK),
+                *(bank.name for bank in banks),
                 *(deposit.bank for deposit in repo.list_deposits()),
             },
             key=str.casefold,
@@ -458,6 +524,7 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
             warning = "Selected date is before the opening snapshot"
         else:
             balances = repo.balances_on(as_of)
+    active_accounts = tuple(account for account in accounts if account.id in balances)
     holdings = []
     for bond in repo.list_bond_lots():
         holdings.append(
@@ -616,6 +683,9 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
     events = repo.list_cash_events()
     return {
         "accounts": accounts,
+        "banks": banks,
+        "securities_accounts": securities_accounts,
+        "banks_by_id": banks_by_id,
         "bank_accounts": bank_accounts,
         "cash_locations": cash_locations,
         "account_labels": account_labels,
@@ -623,6 +693,7 @@ def _read_view(repo: SQLiteCashRepository, as_of: date) -> dict:
         "bank_names": bank_names,
         "custodian_names": custodian_names,
         "balances": balances,
+        "active_accounts": active_accounts,
         "controls": controls,
         "control_default": control_default,
         "outlook": outlook,
@@ -688,6 +759,9 @@ def create_app(db_path: str | Path) -> FastAPI:
         if not db_path.is_file():
             data = {
                 "accounts": (),
+                "banks": (),
+                "securities_accounts": (),
+                "banks_by_id": {},
                 "bank_accounts": (),
                 "cash_locations": (),
                 "account_labels": {},
@@ -695,6 +769,7 @@ def create_app(db_path: str | Path) -> FastAPI:
                 "bank_names": (),
                 "custodian_names": (),
                 "balances": {},
+                "active_accounts": (),
                 "controls": (),
                 "control_default": "",
                 "outlook": None,
@@ -721,6 +796,13 @@ def create_app(db_path: str | Path) -> FastAPI:
                 **data,
                 "csrf": token,
                 "today": date.today(),
+                "one_day": timedelta(days=1),
+                "activation_default": max(
+                    date.today(),
+                    data["opening"].as_of + timedelta(days=1)
+                    if data["opening"] is not None
+                    else date.today(),
+                ),
                 "missing_db": missing,
                 "failed_form": failed_form,
                 "form_values": entered or {},
@@ -762,10 +844,14 @@ def create_app(db_path: str | Path) -> FastAPI:
         if missing:
             data = {
                 "accounts": (),
+                "banks": (),
+                "securities_accounts": (),
+                "banks_by_id": {},
                 "bank_accounts": (),
                 "cash_locations": (),
                 "account_labels": {},
                 "balances": {},
+                "active_accounts": (),
                 "outlook": None,
                 "investment_rows": (),
                 "payments": (),
@@ -778,6 +864,19 @@ def create_app(db_path: str | Path) -> FastAPI:
             with SQLiteCashRepository(db_path) as repo:
                 data = _read_view(repo, selected)
 
+        selected_bank = (
+            next((bank for bank in data["banks"] if target == f"bank:{bank.id}"), None)
+            if area == "money"
+            else None
+        )
+        selected_securities_account = (
+            next(
+                (item for item in data["securities_accounts"] if target == f"securities:{item.id}"),
+                None,
+            )
+            if area == "money"
+            else None
+        )
         selected_account = (
             next(
                 (account for account in data["accounts"] if account.id == target),
@@ -848,6 +947,8 @@ def create_app(db_path: str | Path) -> FastAPI:
                 "area": area,
                 "target": target,
                 "selected_account": selected_account,
+                "selected_bank": selected_bank,
+                "selected_securities_account": selected_securities_account,
                 "selected_asset": selected_asset,
                 "selected_payment": selected_payment,
                 "selected_event": selected_event,
@@ -858,6 +959,13 @@ def create_app(db_path: str | Path) -> FastAPI:
                 "overdue_count": overdue_count,
                 "as_of": selected,
                 "today": date.today(),
+                "one_day": timedelta(days=1),
+                "activation_default": max(
+                    date.today(),
+                    data["opening"].as_of + timedelta(days=1)
+                    if data["opening"] is not None
+                    else date.today(),
+                ),
                 "csrf": token,
                 "missing_db": missing,
             },

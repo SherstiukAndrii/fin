@@ -162,9 +162,11 @@ object list and one selected-object inspector. Avoid unrelated forms in the
 DOM of the main page. Use local native-dialog workflows with preserved focus
 for edit/create/deletion actions, and keep a stable date picker.
 
-Account creation is offered only before an opening snapshot; actual
-transactions and monthly controls require an existing snapshot. Missing
-capabilities must not be presented as active buttons. Cash stays distinct
+Account creation is offered before and after the opening snapshot: later
+accounts require an explicit activation date after opening, start from zero,
+and are excluded from earlier as-of balances. Actual cash changes still
+require dated transactions; monthly controls operate on active accounts.
+Missing capabilities must not be presented as active buttons. Cash stays distinct
 from bank accounts; a bank↔cash transfer is not income. Payout plans do
 not post money, principal redemption is not income, imports never double
 count the same holding, and currencies are never combined without FX.
@@ -177,9 +179,43 @@ CSRF-protected audited `/bank/*` endpoints. Do not remove it until native
 form fragments cover every action and are regression-tested. Deletion
 still needs a review of dependencies, a signed confirmation, explicit
 typed approval, private SQLite backup, and atomic foreign-key-safe writes.
-No migration, financial record rewrite, or personal financial data in Git.
+An audited v5→v6 migration adds banks, custody accounts and dated activation
+of new monetary accounts, without rewriting financial history or storing
+personal financial data in Git.
 
 All UI resources must ship locally and pass Node syntax and Python
 integration tests on 3.12/3.13/3.14, Ruff checks, and a browser usability
 review. The previous CSS-only UX branches #18/#19 and prototype branch
 #20 are not part of the final UI. They remain unmerged alternatives.
+
+## Banks and separate account identities (SQLite v6)
+
+- Bank is an institution (`id`, name, optional HTTPS website and private
+  cabinet URL) with potentially many monetary accounts, including multiple
+  accounts per currency. External links are navigational only: no credentials
+  or fetches are made by Fin.
+- Monetary accounts keep distinct identities and balances. Physical cash
+  is not a bank account, does not have a bank ID, and remains a separate
+  UI group and typed ledger location.
+- Securities accounts are bank-owned custody locations, **not money** and
+  **not holdings**. They must not contribute to balances or be interpreted
+  as purchased OVGZ. Bond and deposit contract links to specific accounts
+  are a separate, explicit follow-up requirement.
+- A fresh monetary account registered after opening requires a date strictly
+  after the opening snapshot. It starts at zero and appears only on/after
+  activation. Transferred funds are captured once by an ordinary dated cash
+  event. A correction requires an explanation and explicit review, not
+  an inferred inflow. Reject any cash leg dated before activation.
+- The opening snapshot continues to describe **only the accounts active at
+  opening**. Never rewrite its contents to backfill subsequently added
+  accounts. Monthly controls require exactly the accounts active at the
+  control date; old snapshots retain their original account coverage.
+- A v6 migration is atomic and makes a private SQLite backup of any existing
+  v1–v5 database before changing schema. Legacy bank account IDs, balances,
+  transaction history and import/custodian records are preserved. Group
+  matching legacy bank names into bank registry entries but do not change
+  the identity of a historical money account.
+- Banks and custody accounts may be deleted only with the signed, typed
+  dependency preview, private backup and atomic deletion. A bank referenced
+  by any monetary or custody account cannot be removed until accounts
+  are explicitly reassigned or deleted.

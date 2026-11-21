@@ -242,3 +242,15 @@ dd { margin:0;font-weight:650;overflow-wrap:anywhere; }
   .record-row { align-items:flex-start;flex-direction:column; }
   .record-actions { justify-content:flex-start; }
 }
+
+
+/* Banks are institutions; money and custody accounts are nested but never merged. */
+.object-row.bank-group { background:#f2f6f9; font-weight:740; border-left:3px solid #c6d7df; }
+.object-row.bank-group.selected { background:var(--accent-bg); border-left-color:var(--accent); }
+.object-row.nested { padding-left:33px; }
+.object-row.nested .object-avatar { width:28px; height:28px; flex-basis:28px; border-radius:7px; font-size:13px; }
+.external-links { display:flex;flex-wrap:wrap;gap:8px;margin:12px 0; }
+.external-links a { font-size:12px;font-weight:700;padding:8px 11px;
+  border:1px solid #bed9e4;border-radius:7px;background:#f1f7fa;overflow-wrap:anywhere; }
+.external-links a:hover { background:#e4f2f7; }
+@media(max-width:760px) { .object-row.nested { padding-left:22px; } }

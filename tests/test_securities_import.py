@@ -146,7 +146,7 @@ def test_migrates_v4_database_without_losing_other_records(tmp_path):
             "INSERT INTO cash_accounts (id, name, currency, kind) VALUES ('old', 'Demo', 'UAH', 'bank')"
         )
     with SQLiteCashRepository(db_path) as repo:
-        assert repo.schema_version() == 5
+        assert repo.schema_version() == 6
         assert repo.get_account("old").name == "Demo"
         assert repo.list_securities_entries() == ()
     with sqlite3.connect(db_path) as db:

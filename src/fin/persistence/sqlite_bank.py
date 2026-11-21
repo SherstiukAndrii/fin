@@ -4,12 +4,15 @@ Persistence never books cash: schedules and actual receipts remain distinct.
 All Decimal values are stored as TEXT, never SQL REAL.
 """
 
+import os
 import sqlite3
 from collections.abc import Iterable
-from datetime import date
+from contextlib import closing
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import TracebackType
+from uuid import uuid4
 
 from fin.domain.bank import (
     ActualReceipt,
@@ -23,7 +26,7 @@ from fin.domain.bank import (
 from fin.domain.money import CurrencyMismatchError, Money
 from fin.domain.securities_import import SecuritiesEntry
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _SCHEMA = (
     """CREATE TABLE bond_instruments (
@@ -153,12 +156,50 @@ _SCHEMA_V5 = (
 )
 
 
+_SCHEMA_V6 = (
+    """CREATE TABLE banks (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        website_url TEXT,
+        cabinet_url TEXT
+    )""",
+    "ALTER TABLE cash_accounts ADD COLUMN bank_id TEXT REFERENCES banks(id) ON DELETE RESTRICT",
+    "ALTER TABLE cash_accounts ADD COLUMN opened_on TEXT",
+    "CREATE INDEX cash_accounts_bank_idx ON cash_accounts(bank_id, currency)",
+    """CREATE TABLE securities_accounts (
+        id TEXT PRIMARY KEY,
+        bank_id TEXT NOT NULL REFERENCES banks(id) ON DELETE RESTRICT,
+        name TEXT NOT NULL
+    )""",
+    "CREATE INDEX securities_accounts_bank_idx ON securities_accounts(bank_id)",
+)
+
+
+def _backup_for_migration(db: sqlite3.Connection, path: str | Path) -> None:
+    """Private, consistent SQLite backup before upgrading an existing database."""
+    if str(path) == ":memory:":
+        return
+    root = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    directory = root / "fin" / "backups"
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    suffix = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+    target = directory / f"fin-pre-v6-{suffix}-{uuid4().hex[:8]}.sqlite3"
+    fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+    os.close(fd)
+    try:
+        with closing(sqlite3.connect(target)) as backup:
+            db.backup(backup)
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+
+
 def _migrate(db: sqlite3.Connection) -> None:
-    """Atomically migrate versions 0–4 to 5; never discard historical data."""
+    """Atomically migrate versions 0–5 to 6; never discard historical data."""
     version = db.execute("PRAGMA user_version").fetchone()[0]
     if version == SCHEMA_VERSION:
         return
-    if version not in (0, 1, 2, 3, 4):
+    if version not in (0, 1, 2, 3, 4, 5):
         raise RuntimeError(f"Unsupported Fin database schema version: {version}")
     # Do not use executescript: it commits pending transactions implicitly.
     db.execute("BEGIN IMMEDIATE")
@@ -178,6 +219,27 @@ def _migrate(db: sqlite3.Connection) -> None:
         if version < 5:
             for sql in _SCHEMA_V5:
                 db.execute(sql)
+        if version < 6:
+            for sql in _SCHEMA_V6:
+                db.execute(sql)
+            # Preserve old bank names and account identities; no cash movement.
+            existing_banks: dict[str, str] = {}
+            for row in db.execute(
+                "SELECT id, name FROM cash_accounts WHERE kind='bank' ORDER BY name, id"
+            ).fetchall():
+                canonical = row["name"].strip().casefold()
+                bank_id = existing_banks.get(canonical)
+                if bank_id is None:
+                    bank_id = f"legacy_bank_{len(existing_banks) + 1}"
+                    db.execute(
+                        "INSERT INTO banks (id, name) VALUES (?, ?)",
+                        (bank_id, row["name"].strip()),
+                    )
+                    existing_banks[canonical] = bank_id
+                db.execute(
+                    "UPDATE cash_accounts SET bank_id=? WHERE id=?",
+                    (bank_id, row["id"]),
+                )
         db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         db.commit()
     except BaseException:
@@ -206,6 +268,9 @@ class SQLiteBankRepository:
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA foreign_keys = ON")
         try:
+            version = self._db.execute("PRAGMA user_version").fetchone()[0]
+            if 0 < version < SCHEMA_VERSION:
+                _backup_for_migration(self._db, path)
             _migrate(self._db)
         except BaseException:
             self._db.close()

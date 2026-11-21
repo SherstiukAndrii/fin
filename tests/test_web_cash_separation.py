@@ -36,8 +36,69 @@ def assert_saved(client, route, **values):
     assert post(client, route, **values).status_code == 303
 
 
+def test_cash_without_any_bank_uses_its_own_form_and_stays_unlinked(browser):
+    client, path = browser
+    workspace = client.get("/bank?area=money")
+    assert workspace.status_code == 200
+    assert 'data-form-id="form-cash"' in workspace.text
+    assert 'data-form-id="form-account"' not in workspace.text
+    assert "Наличные можно добавить без банка" in workspace.text
+
+    form_source = client.get("/bank/forms").text
+    cash_form = form_source.split('<form method="post" action="/bank/cash"', 1)[1].split(
+        "</form>", 1
+    )[0]
+    assert 'name="bank_id"' not in cash_form
+    assert 'name="name"' in cash_form  # Optional storage place, not a bank.
+    assert "Наличные можно учитывать без банка" in cash_form
+
+    assert_saved(client, "cash", currency="UAH")
+    with SQLiteCashRepository(path) as repo:
+        assert repo.list_banks() == ()
+        (wallet,) = repo.list_accounts()
+        assert wallet.kind == AccountKind.CASH
+        assert wallet.name == "На руках"
+        assert wallet.bank_id is None
+    assert "НАЛИЧНЫЕ НА РУКАХ" in client.get("/bank?area=money").text
+
+
+def test_cash_rejects_bank_association_from_any_submission_route(browser):
+    client, path = browser
+    bad_account = post(
+        client,
+        "account",
+        name="Fictional wallet",
+        currency="UAH",
+        kind="cash",
+        bank_id="fictional-bank",
+    )
+    assert bad_account.status_code == 422
+    assert post(client, "cash", currency="UAH", bank_id="fictional-bank").status_code == 422
+    assert post(client, "cash", currency="UAH", kind="bank").status_code == 422
+    assert_saved(client, "cash", currency="UAH")
+    with SQLiteCashRepository(path) as repo:
+        (wallet,) = repo.list_accounts()
+    invalid_edit = post(
+        client,
+        "edit_account",
+        id=wallet.id,
+        kind="cash",
+        name="Changed",
+        currency="UAH",
+        bank_id="fictional-bank",
+    )
+    assert invalid_edit.status_code == 422
+    with SQLiteCashRepository(path) as repo:
+        assert repo.list_banks() == ()
+        (wallet,) = repo.list_accounts()
+        assert wallet.kind == AccountKind.CASH
+        assert wallet.bank_id is None
+        assert wallet.name == "На руках"
+
+
 def test_cash_uses_separate_creation_and_distinct_display(browser):
     client, path = browser
+    assert_saved(client, "bank", id="fictional_bank", name="Imaginary Institution")
     page = client.get("/bank/forms")
     assert 'data-view="accounts">Деньги</a>' in page.text
     assert 'id="bank-accounts"' in page.text

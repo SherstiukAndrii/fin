@@ -11,12 +11,14 @@ from pathlib import Path
 
 from fin.domain.accounts import (
     AccountKind,
+    Bank,
     CashAccount,
     CashEvent,
     CashEventKind,
     CashLeg,
     OpeningBalance,
     OpeningSnapshot,
+    SecuritiesAccount,
     actual_balances,
 )
 from fin.domain.money import CurrencyMismatchError, Money
@@ -51,17 +53,97 @@ class SQLiteCashRepository(SQLiteBankRepository):
         """Delete only after a signed user review; one SQLite transaction."""
         return execute_deletion(self._db, kind, identifier, expected_digest)
 
+    def add_bank(self, bank: Bank) -> None:
+        """A bank is an institution; it owns accounts but contains no money itself."""
+        with self._db:
+            if any(item.name.casefold() == bank.name.casefold() for item in self.list_banks()):
+                raise ValueError("Bank already exists")
+            self._db.execute(
+                "INSERT INTO banks (id, name, website_url, cabinet_url) VALUES (?, ?, ?, ?)",
+                (bank.id, bank.name.strip(), bank.website_url, bank.cabinet_url),
+            )
+
+    def update_bank(self, bank: Bank) -> None:
+        with self._db:
+            if self.get_bank(bank.id) is None:
+                raise ValueError("Bank not found")
+            if any(
+                item.id != bank.id and item.name.casefold() == bank.name.casefold()
+                for item in self.list_banks()
+            ):
+                raise ValueError("Bank already exists")
+            self._db.execute(
+                "UPDATE banks SET name=?, website_url=?, cabinet_url=? WHERE id=?",
+                (bank.name.strip(), bank.website_url, bank.cabinet_url, bank.id),
+            )
+
+    def get_bank(self, bank_id: str) -> Bank | None:
+        row = self._db.execute(
+            "SELECT id, name, website_url, cabinet_url FROM banks WHERE id=?", (bank_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return Bank(row["id"], row["name"], row["website_url"], row["cabinet_url"])
+
+    def list_banks(self) -> tuple[Bank, ...]:
+        rows = self._db.execute("SELECT id FROM banks ORDER BY name COLLATE NOCASE, id").fetchall()
+        return tuple(self.get_bank(row["id"]) for row in rows)
+
+    def add_securities_account(self, account: SecuritiesAccount) -> None:
+        """Custody accounts hold securities, not cash or ledger balances."""
+        with self._db:
+            if self.get_bank(account.bank_id) is None:
+                raise ValueError("Unknown bank")
+            self._db.execute(
+                "INSERT INTO securities_accounts (id, bank_id, name) VALUES (?, ?, ?)",
+                (account.id, account.bank_id, account.name),
+            )
+
+    def update_securities_account(self, account: SecuritiesAccount) -> None:
+        with self._db:
+            if self.get_securities_account(account.id) is None:
+                raise ValueError("Securities account not found")
+            if self.get_bank(account.bank_id) is None:
+                raise ValueError("Unknown bank")
+            self._db.execute(
+                "UPDATE securities_accounts SET bank_id=?, name=? WHERE id=?",
+                (account.bank_id, account.name, account.id),
+            )
+
+    def get_securities_account(self, account_id: str) -> SecuritiesAccount | None:
+        row = self._db.execute(
+            "SELECT id, bank_id, name FROM securities_accounts WHERE id=?", (account_id,)
+        ).fetchone()
+        return (
+            SecuritiesAccount(row["id"], row["bank_id"], row["name"]) if row is not None else None
+        )
+
+    def list_securities_accounts(self) -> tuple[SecuritiesAccount, ...]:
+        rows = self._db.execute(
+            "SELECT id FROM securities_accounts ORDER BY bank_id, name COLLATE NOCASE, id"
+        ).fetchall()
+        return tuple(self.get_securities_account(row["id"]) for row in rows)
+
     def update_account(self, account: CashAccount) -> None:
-        """Display name / kind may change; account ID/currency cannot."""
+        """Protect identity, currency and activation history from silent changes."""
         with self._db:
             old = self.get_account(account.id)
             if old is None:
                 raise ValueError("Account not found")
             if old.currency != account.currency:
                 raise ValueError("Account currency cannot change")
+            if old.kind != account.kind:
+                raise ValueError("Bank account and physical cash cannot be converted")
+            if account.opened_on is not None and account.opened_on != old.opened_on:
+                raise ValueError("Account activation date cannot change")
+            bank_id = account.bank_id if account.bank_id is not None else old.bank_id
+            if bank_id is not None and self.get_bank(bank_id) is None:
+                raise ValueError("Unknown bank")
+            if account.kind == AccountKind.CASH and bank_id is not None:
+                raise ValueError("Physical cash cannot belong to a bank")
             self._db.execute(
-                "UPDATE cash_accounts SET name=?, kind=? WHERE id=?",
-                (account.name, account.kind.value, account.id),
+                "UPDATE cash_accounts SET name=?, bank_id=? WHERE id=?",
+                (account.name, bank_id, account.id),
             )
 
     def update_opening_snapshot(self, snapshot: OpeningSnapshot) -> None:
@@ -110,6 +192,8 @@ class SQLiteCashRepository(SQLiteBankRepository):
                     raise ValueError("Unknown cash account")
                 if leg.change.currency != account.currency:
                     raise CurrencyMismatchError("Cash event currency must match the account")
+                if account.opened_on is not None and event.effective_on < account.opened_on:
+                    raise ValueError("Cash event predates account activation")
             self._db.execute(
                 """UPDATE cash_events SET effective_on=?, kind=?, note=? WHERE id=?""",
                 (event.effective_on.isoformat(), event.kind.value, event.note, event.id),
@@ -123,23 +207,51 @@ class SQLiteCashRepository(SQLiteBankRepository):
                 )
 
     def add_account(self, account: CashAccount) -> None:
+        """New accounts after opening start at zero on a selected activation day.
+
+        A new balance is NEVER income: fund it via an explicit dated transfer
+        or manually reviewed correction, not by rewriting the opening snapshot.
+        """
         with self._db:
-            if self._db.execute("SELECT 1 FROM opening_snapshot").fetchone() is not None:
-                raise ValueError("New accounts after opening snapshot need explicit opening rules")
+            snapshot = self.get_opening_snapshot()
+            if snapshot is None:
+                if account.opened_on is not None:
+                    raise ValueError("Set activation date only after the opening snapshot")
+            elif account.opened_on is None or account.opened_on <= snapshot.as_of:
+                raise ValueError("New accounts must have activation dates after opening snapshot")
+            if account.bank_id is not None:
+                if account.kind != AccountKind.BANK:
+                    raise ValueError("Cash cannot be linked to a bank")
+                if self.get_bank(account.bank_id) is None:
+                    raise ValueError("Unknown bank")
             self._db.execute(
-                """INSERT INTO cash_accounts (id, name, currency, kind)
-                   VALUES (?, ?, ?, ?)""",
-                (account.id, account.name, account.currency, account.kind.value),
+                """INSERT INTO cash_accounts (id, name, currency, kind, bank_id, opened_on)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    account.id,
+                    account.name,
+                    account.currency,
+                    account.kind.value,
+                    account.bank_id,
+                    account.opened_on.isoformat() if account.opened_on is not None else None,
+                ),
             )
 
     def get_account(self, account_id: str) -> CashAccount | None:
         row = self._db.execute(
-            "SELECT id, name, currency, kind FROM cash_accounts WHERE id = ?",
+            "SELECT id, name, currency, kind, bank_id, opened_on FROM cash_accounts WHERE id = ?",
             (account_id,),
         ).fetchone()
         if row is None:
             return None
-        return CashAccount(row["id"], row["name"], row["currency"], AccountKind(row["kind"]))
+        return CashAccount(
+            row["id"],
+            row["name"],
+            row["currency"],
+            AccountKind(row["kind"]),
+            row["bank_id"],
+            date.fromisoformat(row["opened_on"]) if row["opened_on"] else None,
+        )
 
     def list_accounts(self) -> tuple[CashAccount, ...]:
         rows = self._db.execute("SELECT id FROM cash_accounts ORDER BY id").fetchall()
@@ -200,6 +312,8 @@ class SQLiteCashRepository(SQLiteBankRepository):
                     raise ValueError("Cash event references an unknown account")
                 if leg.change.currency != account.currency:
                     raise CurrencyMismatchError("Cash event currency does not match account")
+                if account.opened_on is not None and event.effective_on < account.opened_on:
+                    raise ValueError("Cash event predates account activation")
 
             if event.kind == CashEventKind.RECEIPT:
                 receipt = self._db.execute(
@@ -288,10 +402,12 @@ class SQLiteCashRepository(SQLiteBankRepository):
             opening = self.get_opening_snapshot()
             if opening is None or as_of <= opening.as_of:
                 raise ValueError("Monthly control must follow the opening snapshot")
-            accounts = self.list_accounts()
-            if set(observed) != {account.id for account in accounts}:
-                raise ValueError("Supply an observed balance for every account")
             calculated = self.balances_on(as_of)
+            accounts = tuple(
+                account for account in self.list_accounts() if account.id in calculated
+            )
+            if set(observed) != set(calculated):
+                raise ValueError("Supply an observed balance for every active account")
             for account in accounts:
                 value = observed[account.id]
                 if not isinstance(value, Money):
